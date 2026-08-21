@@ -25,5 +25,10 @@
     "attestedAt": "2026-08-21T08:44:27Z",
     "blockHash": "000000000000000000013df8290f5c0f69790524c2cc538772adf6903cf0922d"
   },
-  "publishedAt": "2026-08-21T07:42:09.583Z"
+  "publishedAt": "2026-08-21T07:42:09.583Z",
+  "proofArweave": {
+    "txid": "xTSMBDgtBXSFLPVc03mMYbhb1Fa9HWw8IXAS98KYaEk",
+    "url": "https://arweave.net/xTSMBDgtBXSFLPVc03mMYbhb1Fa9HWw8IXAS98KYaEk",
+    "uploadedAt": "2026-08-21T11:59:58.039Z"
+  }
 }
