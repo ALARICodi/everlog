@@ -1,0 +1,5 @@
+everlog-receipt/1
+article: 55yxgymexOE
+sha256: 04e332a1bcf77d0dc90c376e3fe71f9c4af0756b865f0d0b3f1667ac5c6715f9
+arweave: 099XEelomuuVCz5JWUWz9aMNn97wct0VnRGmAvEy45w
+issued: 2026-08-21T10:04:44Z

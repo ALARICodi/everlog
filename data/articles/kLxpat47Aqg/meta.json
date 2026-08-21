@@ -1,0 +1,29 @@
+{
+  "id": "kLxpat47Aqg",
+  "title": "ai就是能用自然语言和稀泥的搜索引擎",
+  "author": "小猪",
+  "date": "2026-08-21T07:42:01Z",
+  "sha256": "f6a47be6c076db909329506e2c9c0e5884984838c1252f6d248336a01ec51432",
+  "byteLength": 184,
+  "status": "published",
+  "arweave": {
+    "txid": "GeqoHYkXazlgOA9B8ZlH3yxvHoeOFlAseMrtkbuy_GI",
+    "url": "https://arweave.net/GeqoHYkXazlgOA9B8ZlH3yxvHoeOFlAseMrtkbuy_GI",
+    "uploadedAt": "2026-08-21T07:42:06.519Z"
+  },
+  "bitcoin": {
+    "confirmed": true,
+    "proofs": [
+      "article.txt.ots",
+      "receipt.txt.ots"
+    ],
+    "height": 963408,
+    "heights": [
+      963408,
+      963410
+    ],
+    "attestedAt": "2026-08-21T08:44:27Z",
+    "blockHash": "000000000000000000013df8290f5c0f69790524c2cc538772adf6903cf0922d"
+  },
+  "publishedAt": "2026-08-21T07:42:09.583Z"
+}

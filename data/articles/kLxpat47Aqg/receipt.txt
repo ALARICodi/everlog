@@ -1,0 +1,5 @@
+everlog-receipt/1
+article: kLxpat47Aqg
+sha256: f6a47be6c076db909329506e2c9c0e5884984838c1252f6d248336a01ec51432
+arweave: GeqoHYkXazlgOA9B8ZlH3yxvHoeOFlAseMrtkbuy_GI
+issued: 2026-08-21T07:42:06Z

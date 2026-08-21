@@ -1,0 +1,49 @@
+{
+  "id": "55yxgymexOE",
+  "format": "everlog/2",
+  "title": "猪猪是宝贝",
+  "author": "piggy小猪",
+  "date": "2026-08-21T10:04:35Z",
+  "sha256": "04e332a1bcf77d0dc90c376e3fe71f9c4af0756b865f0d0b3f1667ac5c6715f9",
+  "byteLength": 294,
+  "notBefore": {
+    "bitcoin": {
+      "height": 963421,
+      "hash": "00000000000000000001a8fccc21d7e74e1d9609d28243044b885fd8ed5bfaff",
+      "time": "2026-08-21T10:06:14Z",
+      "mtpTime": "2026-08-21T09:17:12Z"
+    },
+    "arweave": {
+      "height": 1984484,
+      "hash": "75tUmd4JHuB01E2Y-I7-u83oWyR2_2TfSOtQABH18gkX2kC1FknWLq3EwRpRN2n0",
+      "time": "2026-08-21T10:02:26Z"
+    }
+  },
+  "status": "published",
+  "arweave": {
+    "txid": "099XEelomuuVCz5JWUWz9aMNn97wct0VnRGmAvEy45w",
+    "url": "https://arweave.net/099XEelomuuVCz5JWUWz9aMNn97wct0VnRGmAvEy45w",
+    "uploadedAt": "2026-08-21T10:04:44.596Z"
+  },
+  "bitcoin": {
+    "confirmed": true,
+    "proofs": [
+      "article.txt.ots",
+      "receipt.txt.ots"
+    ],
+    "height": 963423,
+    "heights": [
+      963423,
+      963424
+    ],
+    "attestedAt": "2026-08-21T10:14:08Z",
+    "blockHash": "00000000000000000000e6680884190ba43fcab862130c44e4f306161512b0ec"
+  },
+  "publishedAt": "2026-08-21T10:04:46.529Z",
+  "arweaveBlock": {
+    "height": 1984491,
+    "id": "PCAzWpyYj0gh0w-ao2Yv93iErAxaq66slj5hc5hRbfbtnsCGryd1PDHFXdFNrk1G",
+    "timestamp": 1787307084,
+    "time": "2026-08-21T10:11:24.000Z"
+  }
+}
