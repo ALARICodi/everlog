@@ -6,6 +6,7 @@ import crypto from 'node:crypto'
 import { fetchAnchors, assertFresh, verifyAnchors, MAX_ANCHOR_AGE_MS } from './lib/anchors.js'
 import { build, isComplete } from './lib/bundle.js'
 import { scheduleUpgrade } from './jobs/upgrade.js'
+import { sync as gitSync } from './lib/gitsync.js'
 import * as store from './lib/store.js'
 import * as ar from './lib/arweave.js'
 import * as ots from './lib/ots.js'
@@ -215,6 +216,14 @@ async function publish(id, meta) {
   meta.status = 'published'
   meta.publishedAt = new Date().toISOString()
   await store.writeMeta(id, meta)
+
+  // 第三重时间戳 + 异地备份。不阻塞返回,失败也不影响这篇文章已经拿到的证明。
+  gitSync(`发表《${meta.title}》— ${meta.author}
+
+sha256: ${meta.sha256}
+arweave: ${up.txid}`)
+    .then(r => log(id, 'Git:' + r.detail))
+
   if (j) { j.meta = meta; set('done') }
   return meta
 }

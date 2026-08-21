@@ -308,9 +308,13 @@ async function viewArticle(id) {
           ? `#${m.arweaveBlock.height} · ${esc(m.arweaveBlock.time)} <span class="pill ok">已确认</span>`
           : `<span class="pill wait">打包中</span> 已被 Turbo 接收,等待 bundle 上链`}</dd>`
 
-  const arw = m.arweave
-    ? `<dt>Arweave 交易</dt><dd><a href="${m.arweave.url}" target="_blank" rel="noopener">${m.arweave.txid}</a></dd>`
-    : ''
+  const arw = (m.arweave
+    ? `<dt>Arweave · 正文</dt><dd><a href="${m.arweave.url}" target="_blank" rel="noopener">${m.arweave.txid}</a></dd>`
+    : '') + (m.proofArweave
+    // 证明本身也上了 Arweave:这是整套东西里唯一不可再生的文件,
+    // 只存在我们硬盘上就等于把命门交给一块硬盘。
+    ? `<dt>Arweave · 证明</dt><dd><a href="${m.proofArweave.url}" target="_blank" rel="noopener">${m.proofArweave.txid}</a></dd>`
+    : '')
 
   app.innerHTML = `
     <h1 class="title">${esc(m.title)}</h1>

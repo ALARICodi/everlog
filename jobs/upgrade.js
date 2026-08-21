@@ -4,6 +4,7 @@ import * as store from './../lib/store.js'
 import * as ots from './../lib/ots.js'
 import * as ar from './../lib/arweave.js'
 import { btcBlockByHeight } from './../lib/anchors.js'
+import { sync as gitSync } from './../lib/gitsync.js'
 
 /**
  * 每小时跑一次。做两件事:
@@ -123,6 +124,10 @@ export async function runUpgrade() {
     } catch (e) {
       console.log(`  [${meta.id}] 失败: ${e.message}`)
     }
+  }
+  if (changed) {
+    const r = await gitSync(`证明固化 ${changed} 篇`)
+    console.log('[upgrade] Git:' + r.detail)
   }
   return { checked: pending.length, changed }
 }
