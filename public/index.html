@@ -256,9 +256,31 @@ function viewProgress(id) {
     <div class="steps" id="s"></div>
     <div class="muted" id="l"></div>
     <div id="e"></div>`
+  let misses = 0
   const tick = async () => {
     let j
-    try { j = await api('/api/job/' + id) } catch { return setTimeout(tick, 1500) }
+    try {
+      j = await api('/api/job/' + id)
+      misses = 0
+    } catch {
+      // 进度只存在服务端内存里,服务重启就没了。
+      // 这时不能无限重试转圈 —— 用户会以为失败了,回去再发一遍,
+      // 于是同一篇文章被永久上链两次,两次都签着本站的名,删不掉。
+      // 所以改成:直接去问这篇文章到底存不存在。
+      if (++misses < 3) return setTimeout(tick, 1500)
+      try {
+        await api('/api/a/' + id)
+        location.hash = '#/a/' + id      // 其实早就发成功了
+      } catch {
+        $('#e').innerHTML = `<div class="warnbox">
+          <b>看不到发布进度了</b>(服务可能重启过)。<br>
+          这篇文章<b>没有出现在已发表列表里</b>,说明它没有完成上链。<br><br>
+          <b>先去「已发表」确认一遍再决定要不要重发</b> ——
+          重复发布会在链上留下两份永久记录,删不掉。</div>
+          <div class="row"><button class="ghost" onclick="location.hash='#/'">去已发表看看</button></div>`
+      }
+      return
+    }
     const idx = STEPS.findIndex(s => s[0] === j.step)
     $('#s').innerHTML = STEPS.map(([k, label], i) => {
       const done = idx > i || j.step === 'done'
@@ -302,11 +324,14 @@ async function viewArticle(id) {
         m.bitcoin?.confirmed
           ? `#${m.bitcoin.height} · ${esc(m.bitcoin.attestedAt || '')} <span class="pill ok">已确认</span>`
           : `<span class="pill wait">聚合中</span> 已提交 calendar,等待进块(1–2 小时)`}</dd>
-      <dt>Arweave · 不早于</dt><dd>#${nb.arweave.height} · ${esc(nb.arweave.time)}</dd>
+      <dt>Arweave · 不早于</dt><dd>#${nb.arweave.height} · ${esc(nb.arweave.time)}
+        <span class="muted">(区块标称时间)</span></dd>
       <dt>Arweave · 不晚于</dt><dd>${
         m.arweaveBlock
           ? `#${m.arweaveBlock.height} · ${esc(m.arweaveBlock.time)} <span class="pill ok">已确认</span>`
-          : `<span class="pill wait">打包中</span> 已被 Turbo 接收,等待 bundle 上链`}</dd>`
+          // 数据早就上链且能取回,缺的只是网关的索引 —— 别让人误以为上传失败了
+          : `<span class="pill wait">编目中</span> 数据已在 Arweave 上(上面的链接现在就能取回),
+             网关还没建好索引,所以查不到它落在哪个区块。不影响证明。`}</dd>`
 
   const arw = (m.arweave
     ? `<dt>Arweave · 正文</dt><dd><a href="${m.arweave.url}" target="_blank" rel="noopener">${m.arweave.txid}</a></dd>`
@@ -330,9 +355,11 @@ async function viewArticle(id) {
         ${bracket}
       </dl>
     </div>
-    ${nb ? `<p class="muted">「不早于」用的是 <b>MTP</b>(该区块前 11 块时间戳的中位数),
+    ${nb ? `<p class="muted">比特币那条「不早于」用的是 <b>MTP</b>(该区块前 11 块时间戳的中位数),
       不是区块自己的标称时间 —— <b>区块时间戳是矿工填的,可以超前真实时间最多两小时</b>,
-      拿它当下界会超额宣称。MTP 由共识规则保证落在过去,松几十分钟,但站得住。</p>` : ''}
+      拿它当下界会超额宣称。MTP 由共识规则保证落在过去,松几十分钟,但站得住。<br>
+      Arweave 那条标的是区块标称时间,同样由矿工填写,没有做同等的严格处理 ——
+      <b>要较真请以比特币那条为准</b>,它是两条里唯一严格的。</p>` : ''}
 
     ${m.proofComplete ? `
     <div class="dl ready">

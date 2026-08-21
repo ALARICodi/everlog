@@ -24,7 +24,8 @@ const ADMIN_KEY =
     .trim()
 
 const app = express()
-app.use(express.json({ limit: '1mb' }))
+// 贴着实际上限给,超了在入口就以清楚的理由拒绝,而不是收下十倍垃圾再走到深处报错
+app.use(express.json({ limit: '256kb' }))
 app.use(express.static(path.join(HERE, 'public')))
 
 await store.init()
@@ -176,7 +177,13 @@ async function pipeline(id, input) {
   return publish(id, meta)
 }
 
-/** 真正动链的部分。人工放行时也走这里。 */
+/**
+ * 真正动链的部分。
+ *
+ * **必须幂等** —— 崩溃恢复会重跑它。每一步都要先看「是不是已经做过了」,
+ * 否则救援会把 Arweave 再传一遍:同一篇文章两份永久记录,两份都用本站钱包签名,
+ * 删不掉。那正是这套恢复逻辑本来要避免的事故。
+ */
 async function publish(id, meta) {
   const j = jobs.get(id)
   const set = s => { if (j) j.step = s }
@@ -185,32 +192,45 @@ async function publish(id, meta) {
 
   // 3. 先给内容打比特币时间戳 —— 不依赖 Arweave 是否成功,拿到最早的时间。
   set('stamp-content')
-  await ots.stamp(path.join(dir, 'article.txt'))
-  log(id, '内容已提交比特币 calendar(pending)')
+  if (!(await store.hasFile(id, 'article.txt.ots'))) {
+    await ots.stamp(path.join(dir, 'article.txt'))
+    log(id, '内容已提交比特币 calendar(pending)')
+  } else {
+    log(id, '内容时间戳已存在,跳过')
+  }
 
-  // 4. 永久写入 Arweave
+  // 4. 永久写入 Arweave。传过就绝不再传。
   set('arweave')
-  const up = await ar.upload(bytes, {
-    title: meta.title,
-    author: meta.author,
-    sha256: meta.sha256,
-  })
-  meta.arweave = { txid: up.txid, url: up.url, uploadedAt: up.uploadedAt }
-  log(id, `Arweave txid ${up.txid}`)
+  let up = meta.arweave
+  if (up?.txid) {
+    log(id, `Arweave 已传过,跳过(${up.txid})`)
+  } else {
+    up = await ar.upload(bytes, {
+      title: meta.title,
+      author: meta.author,
+      sha256: meta.sha256,
+    })
+    meta.arweave = { txid: up.txid, url: up.url, uploadedAt: up.uploadedAt }
+    log(id, `Arweave txid ${up.txid}`)
+  }
 
   // 5. 回执:把「内容哈希」和「Arweave 交易」绑进同一份字节,再锚一次比特币。
   //    这一步证明的不只是文章存在,还证明**这次上传本身**发生在那个时刻,
   //    于是 Arweave 自己的时间戳可不可信就不再重要了。
   set('stamp-receipt')
-  const receipt =
-    `everlog-receipt/1\n` +
-    `article: ${id}\n` +
-    `sha256: ${meta.sha256}\n` +
-    `arweave: ${up.txid}\n` +
-    `issued: ${new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')}\n`
-  await store.writeProof(id, 'receipt.txt', Buffer.from(receipt, 'utf8'))
-  await ots.stamp(path.join(dir, 'receipt.txt'))
-  log(id, '回执已提交比特币 calendar(pending)')
+  if (!(await store.hasFile(id, 'receipt.txt.ots'))) {
+    const receipt =
+      `everlog-receipt/1\n` +
+      `article: ${id}\n` +
+      `sha256: ${meta.sha256}\n` +
+      `arweave: ${up.txid}\n` +
+      `issued: ${new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')}\n`
+    await store.writeProof(id, 'receipt.txt', Buffer.from(receipt, 'utf8'))
+    await ots.stamp(path.join(dir, 'receipt.txt'))
+    log(id, '回执已提交比特币 calendar(pending)')
+  } else {
+    log(id, '回执时间戳已存在,跳过')
+  }
 
   meta.bitcoin = { confirmed: false, proofs: ['article.txt.ots', 'receipt.txt.ots'] }
   meta.status = 'published'
@@ -226,6 +246,45 @@ arweave: ${up.txid}`)
 
   if (j) { j.meta = meta; set('done') }
   return meta
+}
+
+/**
+ * 启动时收拾上次崩溃/重启留下的半成品。
+ *
+ * status 卡在 'publishing' 的目录,list() 看不见、pendingProofs() 也不管,
+ * 会永远无声无息地烂在那里 —— 而如果它崩在 Arweave 上传之后,
+ * 那次**不可逆**的上传就白花了,我们连它上过链都不知道。
+ *
+ * 所以分两种情况:
+ *   已经传上 Arweave  → 补完剩下的步骤,救回来(上传的钱不能白花)
+ *   还没传            → 标记失败,记一行日志,不再假装它不存在
+ */
+async function recoverOrphans() {
+  let ids = []
+  try {
+    ids = await store.listAll()
+  } catch { return }
+
+  for (const id of ids) {
+    let meta
+    try { meta = await store.readMeta(id) } catch { continue }
+    if (meta.status !== 'publishing') continue
+
+    if (meta.arweave?.txid) {
+      console.log(`[recover] ${id}《${meta.title}》已上 Arweave,补完剩余步骤`)
+      try {
+        await publish(id, meta)   // 幂等:重跑会补上回执与存证
+        console.log(`[recover] ${id} 已救回`)
+      } catch (e) {
+        console.log(`[recover] ${id} 救不回来: ${e.message}`)
+      }
+    } else {
+      meta.status = 'failed'
+      meta.failedReason = '发布过程中服务中断,尚未写入 Arweave'
+      await store.writeMeta(id, meta)
+      console.log(`[recover] ${id}《${meta.title}》标记为失败(未上链,无损失)`)
+    }
+  }
 }
 
 app.post('/api/publish', rateLimit, async (req, res) => {
@@ -293,7 +352,12 @@ app.get('/api/a/:id/file/:name', async (req, res) => {
 
 /* --------------------------------------------------- 人工审核队列(管理员) */
 function admin(req, res, next) {
-  if ((req.query.k || req.headers['x-admin-key']) !== ADMIN_KEY) {
+  // 恒定时间比较。密钥是 128 位随机,时序攻击本就不现实,
+  // 但这是一行的事,没有理由留一个「原则上错」的写法。
+  const given = String(req.query.k || req.headers['x-admin-key'] || '')
+  const a = Buffer.from(given)
+  const b = Buffer.from(ADMIN_KEY)
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
     return res.status(401).json({ error: '需要管理员密钥' })
   }
   next()
@@ -362,5 +426,6 @@ app.get(/^\/a\/[A-Za-z0-9]+$/, (_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`everlog → http://localhost:${PORT}`)
+  recoverOrphans().catch(e => console.log('[recover] ' + e.message))
   scheduleUpgrade()
 })
