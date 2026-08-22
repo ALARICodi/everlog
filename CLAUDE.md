@@ -1,4 +1,4 @@
-# everlog · 你现在在**版本1**(`Desktopeverlog`,分支 `main`)
+# everlog · 你现在在**版本1**(`Desktop\everlog`,分支 `main`)
 
 贴一篇文章 → 永久存进 Arweave,哈希锚进比特币区块。
 **任何人都能独立验证「谁在什么时候写的」,不需要相信这个网站,也不需要它还活着。**
