@@ -132,6 +132,8 @@ footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--rule);font-si
       <a href="#/" id="nav-home">已发表</a>
       <a href="#/write" id="nav-write">写一篇</a>
       <a href="#/mine" id="nav-mine" hidden>我的文章</a>
+      <a href="#/keys" id="nav-keys" hidden>分享密钥</a>
+      <a href="#/query" id="nav-query">查询</a>
       <a href="#/login" id="nav-login">登录</a>
       <a href="#" id="nav-out" hidden>退出</a>
     </nav>
@@ -435,6 +437,7 @@ let me = null   // { id, displayName } 或 null
 async function refreshMe() {
   try { me = (await api('/api/me')).user } catch { me = null }
   $('#nav-mine').hidden = !me
+  $('#nav-keys').hidden = !me
   $('#nav-out').hidden = !me
   $('#nav-login').hidden = !!me
   if (me) $('#nav-login').textContent = me.id
@@ -636,10 +639,144 @@ async function viewMine() {
     `<div class="row"><a href="#/write"><button>写一篇</button></a></div>`
 }
 
+/* -------------------------------------------------- 分享密钥(生成方) */
+
+const DURS = [['3h','3 小时'],['3d','3 天'],['3w','3 周'],['3m','3 个月']]
+
+async function viewKeys() {
+  if (!me) { location.hash = '#/login'; return }
+  app.innerHTML = '<p class="muted">读取中…</p>'
+  const list = await api('/api/sharekey')
+
+  app.innerHTML = `
+    <h2>分享密钥</h2>
+    <p class="muted">生成一串密钥,私下发给你信任的人。对方在<a href="#/query">查询</a>页粘贴它,
+       就能看到你的<b>真实姓名</b>和<b>你名下的全部文章</b>。到期自动失效,也可以随时撤销。</p>
+
+    <label>有效期</label>
+    <div class="row" style="margin-top:8px" id="durs">
+      ${DURS.map(([k,l],i) => `<button class="${i?'ghost':''}" data-d="${k}">${l}</button>`).join('')}
+    </div>
+    <label for="note">备注(只有你自己看得到,方便记住给了谁)</label>
+    <input id="note" placeholder="例如:给编辑老王">
+    <div class="row"><button class="seal" id="gen">生成密钥</button></div>
+    <div id="out"></div>
+
+    <h2 style="margin-top:40px">已生成的密钥</h2>
+    ${list.length ? list.map(k => `
+      <div class="proof">
+        <div class="proof-h">${k.revoked ? '已撤销' : (k.expired ? '已过期' : '有效')} · ${esc(k.label)}</div>
+        <dl>
+          ${k.note ? `<dt>备注</dt><dd>${esc(k.note)}</dd>` : ''}
+          <dt>到期</dt><dd>${esc(k.expiresAt.replace('T',' ').slice(0,16))}</dd>
+          <dt>被查询过</dt><dd>${k.uses} 次${k.lastUsedAt ? ' · 最近 '+esc(k.lastUsedAt.replace('T',' ').slice(0,16)) : ''}</dd>
+        </dl>
+        ${(!k.revoked && !k.expired) ? `<div style="padding:0 14px 14px">
+          <button class="ghost" data-revoke="${k.id}">撤销这把</button></div>` : ''}
+      </div>`).join('')
+      : '<p class="muted">还没有。</p>'}
+
+    <p class="muted" style="margin-top:26px"><b>密钥只在生成那一刻显示一次。</b>
+       我们服务端只存它的哈希,所以连我们自己也算不出来 —— 这样即便数据库泄露,
+       拿到的也只是一堆没用的哈希。丢了就重新生成一把,旧的记得撤销。</p>`
+
+  let dur = '3h'
+  $('#durs').onclick = e => {
+    const b = e.target.closest('button[data-d]'); if (!b) return
+    dur = b.dataset.d
+    ;[...$('#durs').children].forEach(x => x.className = x === b ? '' : 'ghost')
+  }
+  app.querySelectorAll('[data-revoke]').forEach(b => {
+    b.onclick = async () => {
+      await fetch('/api/sharekey/' + b.dataset.revoke, { method: 'DELETE' })
+      viewKeys()
+    }
+  })
+  $('#gen').onclick = async () => {
+    $('#out').innerHTML = ''
+    try {
+      const r = await api('/api/sharekey', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ duration: dur, note: $('#note').value }),
+      })
+      $('#out').innerHTML = `
+        <div class="proof" style="border-color:var(--seal);margin-top:26px">
+          <div class="proof-h">密钥 W · 只显示这一次</div>
+          <dl><dd style="font-size:13.5px;line-height:1.8;padding:6px 0">${r.key}</dd></dl>
+          <div style="padding:0 14px 14px">
+            <button id="copy">复制</button>
+            <span class="muted" id="copied" style="margin-left:10px"></span>
+          </div>
+        </div>
+        <div class="warnbox"><b>现在就复制走。</b>关掉这个页面之后,
+          这串字符再也拿不回来了 —— 我们只存了它的哈希。<br>
+          有效期到 ${esc(r.expiresAt.replace('T',' ').slice(0,16))}。</div>
+        <details style="margin-top:20px">
+          <summary class="muted" style="cursor:pointer">看看这串密钥是怎么算出来的</summary>
+          <p class="muted" style="margin-top:12px">按固定格式拼一份文件,整份丢进 SHA-256,
+             得到的就是上面那串。<b>其中 nonce 是 32 字节随机数</b> ——
+             没有它,任何人都能拼出同样的文件、算出同样的密钥,这个功能就废了。</p>
+          <pre class="bytes">${esc(r.file)}</pre>
+          <p class="muted">↓ SHA-256 ↓</p>
+          <pre class="bytes">${r.key}</pre>
+        </details>`
+      $('#copy').onclick = async () => {
+        try { await navigator.clipboard.writeText(r.key); $('#copied').textContent = '已复制' }
+        catch { $('#copied').textContent = '复制失败,请手动选中' }
+      }
+    } catch (e) { $('#out').innerHTML = `<p class="err">${esc(e.message)}</p>` }
+  }
+}
+
+/* -------------------------------------------------- 查询(接收方,免登录) */
+
+function viewQuery() {
+  app.innerHTML = `
+    <h2>凭密钥查询</h2>
+    <p class="muted">如果有人把分享密钥给了你,粘贴在这里,就能看到他的真实姓名和全部文章。
+       <b>不需要注册或登录。</b></p>
+    <label for="k">分享密钥</label>
+    <input id="k" placeholder="64 位十六进制" autocomplete="off" spellcheck="false"
+           style="font-family:var(--mono);font-size:14px">
+    <div class="row"><button id="go">查询</button></div>
+    <div id="out"></div>`
+  $('#k').addEventListener('keydown', e => { if (e.key === 'Enter') $('#go').click() })
+  $('#go').onclick = async () => {
+    $('#out').innerHTML = '<p class="muted">查询中…</p>'
+    try {
+      const r = await api('/api/query', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ key: $('#k').value.trim() }),
+      })
+      $('#out').innerHTML = `
+        <div class="proof" style="border-color:var(--ok);margin-top:26px">
+          <div class="proof-h">密钥有效</div>
+          <dl>
+            <dt>真实姓名</dt><dd style="font-size:18px">${r.realName ? esc(r.realName) : '<span class="muted">该账号尚未完成实名绑定</span>'}</dd>
+            <dt>显示名</dt><dd>${esc(r.displayName)}</dd>
+            <dt>用户号</dt><dd>${esc(r.userId)}</dd>
+            <dt>账号创建于</dt><dd>${esc(r.createdAt.replace('T',' ').slice(0,16))}</dd>
+            <dt>本密钥到期</dt><dd>${esc(r.keyExpiresAt.replace('T',' ').slice(0,16))}</dd>
+          </dl>
+        </div>
+        <h2>他名下的文章 · ${r.articles.length} 篇</h2>
+        ${r.articles.length ? r.articles.map(m => `
+          <a class="item" href="#/a/${m.id}">
+            <h3>${esc(m.title)}</h3>
+            <div class="meta">${esc(m.author)} · ${m.date.slice(0,10)} · ${
+              m.bitcoin?.confirmed ? '<span class="pill ok">比特币已确认</span>'
+                                   : '<span class="pill wait">确认中</span>'}</div>
+          </a>`).join('')
+          : '<p class="muted">这个账号名下还没有文章(匿名发布的不算)。</p>'}`
+    } catch (e) { $('#out').innerHTML = `<p class="err">${esc(e.message)}</p>` }
+  }
+}
+
 /* -------------------------------------------------------------- 路由 */
 function route() {
   const h = location.hash || '#/'
-  for (const [id, hash] of [['#nav-home','#/'],['#nav-write','#/write'],['#nav-mine','#/mine']]) {
+  for (const [id, hash] of [['#nav-home','#/'],['#nav-write','#/write'],
+                            ['#nav-mine','#/mine'],['#nav-keys','#/keys'],['#nav-query','#/query']]) {
     $(id).className = h === hash ? 'on' : ''
   }
   window.scrollTo(0, 0)
@@ -647,6 +784,8 @@ function route() {
   if (h === '#/login') return viewLogin()
   if (h === '#/enroll') return viewEnroll()
   if (h === '#/mine') return viewMine()
+  if (h === '#/keys') return viewKeys()
+  if (h === '#/query') return viewQuery()
   const m = h.match(/^#\/a\/([A-Za-z0-9]+)$/)
   if (m) return viewArticle(m[1])
   return viewHome()

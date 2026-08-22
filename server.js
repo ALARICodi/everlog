@@ -12,6 +12,7 @@ import * as ar from './lib/arweave.js'
 import * as ots from './lib/ots.js'
 import * as users from './lib/users.js'
 import * as session from './lib/session.js'
+import * as sharekey from './lib/sharekey.js'
 // 上链前审核暂时关闭(lib/moderate.js 保留,以后要开时把 pipeline 里那段接回来)。
 // 注意:关掉之后任何投稿都会直接永久上链,且由本站钱包签名。
 
@@ -33,6 +34,7 @@ app.use(express.static(path.join(HERE, 'public')))
 
 await store.init()
 await users.init()
+await sharekey.init()
 
 /* ------------------------------------------------------------ 账号
    与版本1 的唯一区别就是这一块。发布链路、证明、验证器全都没动。
@@ -107,6 +109,71 @@ app.post('/api/me/password', session.requireLogin, async (req, res) => {
   } catch (e) {
     res.status(400).json({ error: e.message })
   }
+})
+
+/* --------------------------------------------------- 分享密钥
+
+   A 生成一串 W,私下给 B;B 在查询框粘贴 W,就能看到 A 的姓名和全部文章。
+   W = sha256(一份含 32 字节随机数的文件)。服务端只存 sha256(W)。 */
+
+app.post('/api/sharekey', session.requireLogin, async (req, res) => {
+  try {
+    const r = await sharekey.create(req.userId, req.body?.duration, req.body?.note)
+    // key 和 file 只在这一次响应里出现,服务端不留 —— 之后我们自己也算不出来
+    res.json(r)
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+app.get('/api/sharekey', session.requireLogin, async (req, res) => {
+  res.json(await sharekey.listFor(req.userId))
+})
+
+app.delete('/api/sharekey/:id', session.requireLogin, async (req, res) => {
+  try {
+    await sharekey.revoke(req.userId, req.params.id)
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+/**
+ * 凭密钥查询。**不需要登录** —— 拿到密钥的人未必是本站用户。
+ * 限流是必需的:这是个能验证秘密的接口,不限流就成了在线爆破机。
+ */
+const queryHits = new Map()
+function queryLimit(req, res, next) {
+  const ip = req.headers['cf-connecting-ip'] || req.ip
+  const min = Math.floor(Date.now() / 60000)
+  const key = `${ip}:${min}`
+  if (queryHits.size > 3000) queryHits.clear()
+  const n = (queryHits.get(key) || 0) + 1
+  queryHits.set(key, n)
+  if (n > 20) return res.status(429).json({ error: '查询太频繁,请稍后再试' })
+  next()
+}
+
+app.post('/api/query', queryLimit, async (req, res) => {
+  const r = await sharekey.resolve(req.body?.key)
+  if (!r.ok) return res.status(404).json({ error: r.reason })
+
+  const u = await users.read(r.userId)
+  if (!u) return res.status(404).json({ error: '这把密钥对应的账号已不存在' })
+
+  const all = await store.list()
+  res.json({
+    // 密钥持有者是被授权的,给全名;没绑过实名的就只有显示名
+    realName: u.realNameEnc ? users.decryptName(u.realNameEnc) : null,
+    displayName: u.displayName,
+    userId: u.id,
+    status: u.status || 'pending',
+    createdAt: u.createdAt,
+    keyExpiresAt: r.expiresAt,
+    note: r.note,
+    articles: all.filter(m => m.owner === u.id),
+  })
 })
 
 /** 我的文章 —— 账号系统存在的主要理由:换台设备也能找回来 */
