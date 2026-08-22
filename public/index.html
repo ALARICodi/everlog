@@ -27,7 +27,25 @@ body{
 .wrap{max-width:660px;margin:0 auto}
 
 /* ---- 页眉:像书的版权页,不像导航栏 ---- */
-header{padding:34px 0 20px;border-bottom:1px solid var(--rule);margin-bottom:30px}
+header{padding:34px 0 20px;border-bottom:1px solid var(--rule);margin-bottom:30px;position:relative}
+/* 右上角常驻入口 */
+.idbtn{position:absolute;top:30px;right:0;font-size:12.5px;letter-spacing:.03em;
+  color:var(--ink);text-decoration:none;border:1px solid var(--seal);padding:7px 12px;white-space:nowrap}
+.idbtn.done{border-color:var(--ok);color:var(--ok)}
+@media(max-width:520px){
+  .idbtn{position:static;display:inline-block;margin-bottom:14px}
+  header{padding-top:24px}
+}
+/* 认证向导 */
+.wiz{display:flex;gap:0;margin:24px 0 28px;border:1px solid var(--rule)}
+.wiz div{flex:1;padding:11px 8px;text-align:center;font-size:12.5px;color:var(--ink-3);
+  border-right:1px solid var(--rule);line-height:1.4}
+.wiz div:last-child{border-right:0}
+.wiz div.now{color:var(--ink);border-bottom:2px solid var(--seal)}
+.wiz div.ok{color:var(--ok)}
+.wiz b{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;margin-bottom:3px}
+.soon{border:1px dashed var(--rule-2);padding:22px 16px;text-align:center;margin:22px 0;color:var(--ink-3)}
+.soon b{display:block;color:var(--ink);font-size:16px;margin-bottom:8px;font-family:var(--serif)}
 .brand{font-family:var(--mono);font-size:13px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3)}
 .brand b{color:var(--ink);font-weight:600}
 .tagline{font-family:var(--serif);font-size:22px;line-height:1.45;margin:14px 0 0;font-weight:400}
@@ -106,12 +124,18 @@ footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--rule);font-si
 <body>
 <div class="wrap">
   <header>
+    <a href="#/enroll" class="idbtn" id="idbtn">认证你的唯一账号</a>
     <div class="brand"><b>everlog</b> &nbsp;永久记录</div>
     <p class="tagline">写下来,<em>然后没人能说这不是你写的</em>。</p>
     <p class="sub">每篇文章同时获得三个独立时间戳:Arweave 永久存储、比特币区块锚定、Git 提交记录。任何人可自行验证,不需要相信这个网站。</p>
     <nav>
       <a href="#/" id="nav-home">已发表</a>
       <a href="#/write" id="nav-write">写一篇</a>
+      <a href="#/mine" id="nav-mine" hidden>我的文章</a>
+      <a href="#/keys" id="nav-keys" hidden>分享密钥</a>
+      <a href="#/query" id="nav-query">查询</a>
+      <a href="#/login" id="nav-login">登录</a>
+      <a href="#" id="nav-out" hidden>退出</a>
     </nav>
   </header>
   <main id="app"></main>
@@ -166,6 +190,14 @@ function viewWrite() {
     <h2>写一篇</h2>
     <label for="t">标题</label><input id="t" value="${esc(draft.title)}" placeholder="一句话说清楚">
     <label for="a">署名</label><input id="a" value="${esc(draft.author)}" placeholder="你希望永久留在链上的名字">
+    ${me ? `<p class="muted" style="margin-top:6px">已登录 <b>${me.id}</b>,这篇会记在你名下(方便以后找回)。
+      注意:<b>署名仍然只是自称</b> —— 账号不参与证明,它证明不了「谁写的」。</p>`
+         : `<div class="warnbox" style="margin:14px 0 0;font-size:13.5px">
+      <b>你现在没有登录,可以直接发。</b>但这篇会是<b>无归属</b>的 ——
+      文章照常上链、照常拿到完整证明,只是不会属于任何账号。<br>
+      <b>而且以后注册了也认领不回来</b>:归属在发布那一刻就定死了,
+      没有任何事后追认的途径。想让它记在名下,请先
+      <a href="#/enroll">认证账号</a> 再发。</div>`}
     <label for="b">正文</label><textarea id="b" placeholder="纯文本。写完先预览,确认字节无误再发布。">${esc(draft.body)}</textarea>
     <div class="row">
       <button id="go">预览并确认</button>
@@ -399,19 +431,390 @@ async function viewArticle(id) {
     <div class="row"><a href="#/"><button class="ghost">返回列表</button></a></div>`
 }
 
+/* -------------------------------------------------------------- 账号 */
+let me = null   // { id, status, realNameBound, realNameMasked } 或 null
+
+async function refreshMe() {
+  try { me = (await api('/api/me')).user } catch { me = null }
+  $('#nav-mine').hidden = !me
+  $('#nav-keys').hidden = !me
+  $('#nav-out').hidden = !me
+  $('#nav-login').hidden = !!me
+  if (me) $('#nav-login').textContent = me.id
+  // 右上角那颗常驻按钮:没账号 → 去认证;认证没走完 → 提示继续;走完 → 显示号码
+  const b = $('#idbtn')
+  if (!me) { b.textContent = '认证你的唯一账号'; b.className = 'idbtn'; b.href = '#/enroll' }
+  else if (!me.realNameBound) { b.textContent = '认证未完成 · 继续'; b.className = 'idbtn'; b.href = '#/enroll' }
+  else { b.textContent = me.id + ' · 已认证'; b.className = 'idbtn done'; b.href = '#/enroll' }
+}
+
+$('#nav-out').onclick = async e => {
+  e.preventDefault()
+  await fetch('/api/logout', { method: 'POST' })
+  await refreshMe()
+  location.hash = '#/'
+  route()
+}
+
+function viewLogin() {
+  app.innerHTML = `
+    <h2>登录</h2>
+    <p class="muted">用<b>用户号</b>或<b>真实姓名</b>都可以,两种方式都要配上密码。</p>
+    <label for="acct">用户号 或 真实姓名</label>
+    <input id="acct" placeholder="U12345678  或  你的真实全名" autocomplete="username">
+    <label for="pw">密码</label>
+    <input id="pw" type="password" autocomplete="current-password">
+    <label>人脸识别</label>
+    <div class="soon" style="margin:8px 0 0;padding:14px">
+      <span class="muted">模块尚未接入,登录时暂时跳过这一步</span>
+    </div>
+    <div class="row">
+      <button id="go">登录</button>
+      <a href="#/enroll"><button class="ghost">没有账号,去认证</button></a>
+    </div>
+    <div id="e"></div>
+    <p class="muted" style="margin-top:26px">账号只用来<b>以后找回自己的文章</b>。
+       它不会写进文章字节,也不参与任何证明 —— 你已发布的东西,
+       不需要这个网站、不需要账号,任何人都能独立验证。</p>`
+  const submit = async () => {
+    $('#e').innerHTML = ''
+    try {
+      await api('/api/login', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ account: $('#acct').value, password: $('#pw').value }),
+      })
+      await refreshMe()
+      location.hash = '#/mine'
+    } catch (e) { $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>` }
+  }
+  $('#go').onclick = submit
+  $('#pw').addEventListener('keydown', e => { if (e.key === 'Enter') submit() })
+}
+
+function enrollStep1() {
+  app.innerHTML = `
+    <h2>认证你的唯一账号</h2>
+    ${wizBar(1)}
+    <p class="muted"><b>这个站没有网名。</b>一个账号只由两样东西标识:
+       系统分配的用户号,和你之后绑定的真实姓名 —— 都不是你能随口编的。<br>
+       用户号会在下一步完成后自动生成,格式 U + 8 位数字(不含 0),<b>生成即锁死</b>。</p>
+    <label for="pw1">设置密码(至少 8 位)</label>
+    <input id="pw1" type="password" autocomplete="new-password">
+    <label for="pw2">再输一遍</label>
+    <input id="pw2" type="password" autocomplete="new-password">
+    <div class="row">
+      <button id="go">下一步</button>
+      <a href="#/login"><button class="ghost">已有账号,去登录</button></a>
+    </div>
+    <div id="e"></div>`
+  $('#pw2').addEventListener('keydown', e => { if (e.key === 'Enter') $('#go').click() })
+  $('#go').onclick = async () => {
+    $('#e').innerHTML = ''
+    if ($('#pw1').value !== $('#pw2').value) {
+      return $('#e').innerHTML = '<p class="err">两次密码不一样</p>'
+    }
+    try {
+      // 只把密码扣在服务端,拿一个 token。**此刻还没有账号,也还没有号码。**
+      const r = await api('/api/enroll/begin', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ password: $('#pw1').value }),
+      })
+      regToken = r.token
+      regPassword = $('#pw1').value
+      enrollStep2()
+    } catch (e) { $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>` }
+  }
+}
+
+function enrollStep2() {
+  app.innerHTML = `
+    <h2>人脸识别</h2>
+    ${wizBar(2)}
+    <div class="soon">
+      <b>这一步还没做</b>
+      人脸识别涉及活体检测、特征提取、模板存储、防照片攻击 ——<br>
+      是个独立模块,以后单独接入。<br><br>
+      <span class="muted">这里先占个位置,让整个流程能走通。</span>
+    </div>
+    <p class="muted">接入之后,人脸会成为登录的必要一环,也是这套身份体系里
+       <b>唯一真正锚定到「人」</b>的东西 —— 用户号可以转手,密码可以告诉别人,
+       姓名可以重名,只有这一项不行。</p>
+    <div class="row"><button id="go">下一步</button></div>
+    <div id="e"></div>`
+  $('#go').onclick = async () => {
+    $('#e').innerHTML = ''
+    try {
+      await api('/api/enroll/face', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ token: regToken }),
+      })
+      enrollStep3()
+    } catch (e) { $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>` }
+  }
+}
+
+function enrollStep3() {
+  app.innerHTML = `
+    <h2>绑定真实姓名</h2>
+    ${wizBar(3)}
+    <p class="muted">请输入两次完全一致的真实全名。<b>绑定后不可更改</b>,
+       以后可以用它代替用户号登录。</p>
+    <label for="n1">真实全名</label>
+    <input id="n1" autocomplete="off">
+    <label for="n2">再输一遍</label>
+    <input id="n2" autocomplete="off">
+    <div class="row"><button class="seal" id="go">生成账号</button></div>
+    <div id="e"></div>
+    <p class="muted" style="margin-top:26px">点下这个按钮,才会真正建号并分配用户号。
+       在此之前你填的一切都只是暂存,中途关掉不留任何痕迹。</p>`
+  $('#n2').addEventListener('keydown', e => { if (e.key === 'Enter') $('#go').click() })
+  $('#go').onclick = async () => {
+    $('#e').innerHTML = ''
+    $('#go').disabled = true
+    try {
+      await api('/api/enroll/name', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ token: regToken, name1: $('#n1').value, name2: $('#n2').value }),
+      })
+      // 到这一刻,号码 + 人脸 + 姓名 一次性落盘
+      const u = await api('/api/enroll/finish', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ token: regToken }),
+      })
+      regToken = null
+      await refreshMe()
+      enrollSuccess(u)
+    } catch (e) {
+      $('#go').disabled = false
+      $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>`
+    }
+  }
+}
+
+/** 认证成功页:一次性把三样凭证摆出来 */
+function enrollSuccess(u) {
+  // 密码掩码在浏览器本地算 —— 服务端从没存过明文,也不该在响应里回传它
+  const pw = regPassword || ''
+  const pwMask = pw ? pw[0] + '*'.repeat(Math.max(pw.length - 1, 0)) : '(已设置)'
+  regPassword = null
+
+  app.innerHTML = `
+    <h2>账号认证成功</h2>
+    ${wizBar(4)}
+    <div class="proof" style="border-color:var(--ok)">
+      <div class="proof-h">你的凭证 · 请立刻记下</div>
+      <dl>
+        <dt>本账号 ID</dt>
+        <dd style="font-size:25px;letter-spacing:.14em;padding:8px 0">${esc(u.id)}</dd>
+        <dt>姓名</dt><dd style="font-size:17px">${esc(u.realNameMasked || '')}</dd>
+        <dt>密码</dt><dd style="font-size:17px">${esc(pwMask)}</dd>
+      </dl>
+    </div>
+    <div class="warnbox"><b>以后两种方式都能登录:</b><br>
+      用户号 <b>${esc(u.id)}</b> + 密码<br>
+      真实姓名 + 密码<br><br>
+      本站不收邮箱、不收手机号,<b>没有任何找回途径</b>。
+      号和姓名都忘了,账号就永久进不去 —— 但已发布的文章和证明不受影响,
+      它们本来就不依赖账号。</div>
+    <div class="row">
+      <a href="#/write"><button>去写一篇</button></a>
+      <a href="#/keys"><button class="ghost">分享密钥</button></a>
+    </div>`
+}
+
+function enrollDone() {
+  app.innerHTML = `
+    <h2>认证完成</h2>
+    ${wizBar(4)}
+    <div class="proof" style="border-color:var(--ok)">
+      <div class="proof-h">你的账号</div>
+      <dl>
+        <dt>用户号</dt><dd style="font-size:20px;letter-spacing:.1em">${me.id}</dd>
+        <dt>真实姓名</dt><dd>${me.realNameMasked ? esc(me.realNameMasked) + ' <span class="pill ok">已绑定</span>' : '未绑定'}</dd>
+        <dt>人脸</dt><dd><span class="pill wait">模块未接入</span></dd>
+      </dl>
+    </div>
+    <p class="muted">登录方式:<b>用户号 + 密码</b>,或 <b>真实姓名 + 密码</b>(人脸接入后再加一项)。</p>
+    <div class="row">
+      <a href="#/write"><button>去写一篇</button></a>
+      <a href="#/mine"><button class="ghost">我的文章</button></a>
+    </div>`
+}
+
+async function viewMine() {
+  if (!me) { location.hash = '#/login'; return }
+  app.innerHTML = '<p class="muted">读取中…</p>'
+  const list = await api('/api/mine')
+  app.innerHTML = `
+    <h2>我的文章</h2>
+    <p class="muted">用户号 <b>${me.id}</b>${me.realNameMasked ? ' · 已实名 ' + esc(me.realNameMasked) : ' · 未实名'}</p>` +
+    (list.length ? list.map(m => `
+      <a class="item" href="#/a/${m.id}">
+        <h3>${esc(m.title)}</h3>
+        <div class="meta">${m.date.slice(0,10)} · ${
+          m.bitcoin?.confirmed ? '<span class="pill ok">比特币已确认</span>'
+                               : '<span class="pill wait">确认中</span>'}</div>
+      </a>`).join('')
+      : '<p class="muted">还没有。登录状态下发布的文章会出现在这里。</p>') +
+    `<div class="row"><a href="#/write"><button>写一篇</button></a></div>`
+}
+
+/* -------------------------------------------------- 分享密钥(生成方) */
+
+const DURS = [['3h','3 小时'],['3d','3 天'],['3w','3 周'],['3m','3 个月']]
+
+async function viewKeys() {
+  if (!me) { location.hash = '#/login'; return }
+  app.innerHTML = '<p class="muted">读取中…</p>'
+  const list = await api('/api/sharekey')
+
+  app.innerHTML = `
+    <h2>分享密钥</h2>
+    <p class="muted">生成一串密钥,私下发给你信任的人。对方在<a href="#/query">查询</a>页粘贴它,
+       就能看到你的<b>真实姓名</b>和<b>你名下的全部文章</b>。到期自动失效,也可以随时单独撤销。</p>
+    <p class="muted"><b>最多同时有 3 把有效密钥</b> —— 现在有
+       <b>${list.filter(k => !k.revoked && !k.expired).length} 把</b>。
+       过期的和已撤销的不占名额。密钥能看到真名和全部文章,散出去越多越难收回,
+       所以逼你先撤掉不用的那把,才是对你有利的默认。</p>
+
+    <label>有效期</label>
+    <div class="row" style="margin-top:8px" id="durs">
+      ${DURS.map(([k,l],i) => `<button class="${i?'ghost':''}" data-d="${k}">${l}</button>`).join('')}
+    </div>
+    <label for="note">备注(只有你自己看得到,方便记住给了谁)</label>
+    <input id="note" placeholder="例如:给编辑老王">
+    <div class="row"><button class="seal" id="gen">生成密钥</button></div>
+    <div id="out"></div>
+
+    <h2 style="margin-top:40px">已生成的密钥</h2>
+    ${list.length ? list.map(k => `
+      <div class="proof">
+        <div class="proof-h">${k.revoked ? '已撤销' : (k.expired ? '已过期' : '有效')} · ${esc(k.label)}</div>
+        <dl>
+          ${k.note ? `<dt>备注</dt><dd>${esc(k.note)}</dd>` : ''}
+          <dt>到期</dt><dd>${esc(k.expiresAt.replace('T',' ').slice(0,16))}</dd>
+          <dt>被查询过</dt><dd>${k.uses} 次${k.lastUsedAt ? ' · 最近 '+esc(k.lastUsedAt.replace('T',' ').slice(0,16)) : ''}</dd>
+        </dl>
+        ${(!k.revoked && !k.expired) ? `<div style="padding:0 14px 14px">
+          <button class="ghost" data-revoke="${k.id}">撤销这把</button></div>` : ''}
+      </div>`).join('')
+      : '<p class="muted">还没有。</p>'}
+
+    <p class="muted" style="margin-top:26px"><b>密钥只在生成那一刻显示一次。</b>
+       我们服务端只存它的哈希,所以连我们自己也算不出来 —— 这样即便数据库泄露,
+       拿到的也只是一堆没用的哈希。丢了就重新生成一把,旧的记得撤销。</p>`
+
+  let dur = '3h'
+  $('#durs').onclick = e => {
+    const b = e.target.closest('button[data-d]'); if (!b) return
+    dur = b.dataset.d
+    ;[...$('#durs').children].forEach(x => x.className = x === b ? '' : 'ghost')
+  }
+  app.querySelectorAll('[data-revoke]').forEach(b => {
+    b.onclick = async () => {
+      await fetch('/api/sharekey/' + b.dataset.revoke, { method: 'DELETE' })
+      viewKeys()
+    }
+  })
+  $('#gen').onclick = async () => {
+    $('#out').innerHTML = ''
+    try {
+      const r = await api('/api/sharekey', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ duration: dur, note: $('#note').value }),
+      })
+      $('#out').innerHTML = `
+        <div class="proof" style="border-color:var(--seal);margin-top:26px">
+          <div class="proof-h">密钥 W · 只显示这一次</div>
+          <dl><dd style="font-size:13.5px;line-height:1.8;padding:6px 0">${r.key}</dd></dl>
+          <div style="padding:0 14px 14px">
+            <button id="copy">复制</button>
+            <span class="muted" id="copied" style="margin-left:10px"></span>
+          </div>
+        </div>
+        <div class="warnbox"><b>现在就复制走。</b>关掉这个页面之后,
+          这串字符再也拿不回来了 —— 我们只存了它的哈希。<br>
+          有效期到 ${esc(r.expiresAt.replace('T',' ').slice(0,16))}。</div>
+        <details style="margin-top:20px">
+          <summary class="muted" style="cursor:pointer">看看这串密钥是怎么算出来的</summary>
+          <p class="muted" style="margin-top:12px">按固定格式拼一份文件,整份丢进 SHA-256,
+             得到的就是上面那串。<b>其中 nonce 是 32 字节随机数</b> ——
+             没有它,任何人都能拼出同样的文件、算出同样的密钥,这个功能就废了。</p>
+          <pre class="bytes">${esc(r.file)}</pre>
+          <p class="muted">↓ SHA-256 ↓</p>
+          <pre class="bytes">${r.key}</pre>
+        </details>`
+      $('#copy').onclick = async () => {
+        try { await navigator.clipboard.writeText(r.key); $('#copied').textContent = '已复制' }
+        catch { $('#copied').textContent = '复制失败,请手动选中' }
+      }
+    } catch (e) { $('#out').innerHTML = `<p class="err">${esc(e.message)}</p>` }
+  }
+}
+
+/* -------------------------------------------------- 查询(接收方,免登录) */
+
+function viewQuery() {
+  app.innerHTML = `
+    <h2>凭密钥查询</h2>
+    <p class="muted">如果有人把分享密钥给了你,粘贴在这里,就能看到他的真实姓名和全部文章。
+       <b>不需要注册或登录。</b></p>
+    <label for="k">分享密钥</label>
+    <input id="k" placeholder="64 位十六进制" autocomplete="off" spellcheck="false"
+           style="font-family:var(--mono);font-size:14px">
+    <div class="row"><button id="go">查询</button></div>
+    <div id="out"></div>`
+  $('#k').addEventListener('keydown', e => { if (e.key === 'Enter') $('#go').click() })
+  $('#go').onclick = async () => {
+    $('#out').innerHTML = '<p class="muted">查询中…</p>'
+    try {
+      const r = await api('/api/query', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ key: $('#k').value.trim() }),
+      })
+      $('#out').innerHTML = `
+        <div class="proof" style="border-color:var(--ok);margin-top:26px">
+          <div class="proof-h">密钥有效</div>
+          <dl>
+            <dt>真实姓名</dt><dd style="font-size:18px">${r.realName ? esc(r.realName) : '<span class="muted">该账号尚未完成实名绑定</span>'}</dd>
+            <dt>用户号</dt><dd>${esc(r.userId)}</dd>
+            <dt>账号创建于</dt><dd>${esc(r.createdAt.replace('T',' ').slice(0,16))}</dd>
+            <dt>本密钥到期</dt><dd>${esc(r.keyExpiresAt.replace('T',' ').slice(0,16))}</dd>
+          </dl>
+        </div>
+        <h2>他名下的文章 · ${r.articles.length} 篇</h2>
+        ${r.articles.length ? r.articles.map(m => `
+          <a class="item" href="#/a/${m.id}">
+            <h3>${esc(m.title)}</h3>
+            <div class="meta">${esc(m.author)} · ${m.date.slice(0,10)} · ${
+              m.bitcoin?.confirmed ? '<span class="pill ok">比特币已确认</span>'
+                                   : '<span class="pill wait">确认中</span>'}</div>
+          </a>`).join('')
+          : '<p class="muted">这个账号名下还没有文章(匿名发布的不算)。</p>'}`
+    } catch (e) { $('#out').innerHTML = `<p class="err">${esc(e.message)}</p>` }
+  }
+}
+
 /* -------------------------------------------------------------- 路由 */
 function route() {
   const h = location.hash || '#/'
-  $('#nav-home').className = h === '#/' ? 'on' : ''
-  $('#nav-write').className = h === '#/write' ? 'on' : ''
+  for (const [id, hash] of [['#nav-home','#/'],['#nav-write','#/write'],
+                            ['#nav-mine','#/mine'],['#nav-keys','#/keys'],['#nav-query','#/query']]) {
+    $(id).className = h === hash ? 'on' : ''
+  }
   window.scrollTo(0, 0)
   if (h === '#/write') return viewWrite()
+  if (h === '#/login') return viewLogin()
+  if (h === '#/enroll') return viewEnroll()
+  if (h === '#/mine') return viewMine()
+  if (h === '#/keys') return viewKeys()
+  if (h === '#/query') return viewQuery()
   const m = h.match(/^#\/a\/([A-Za-z0-9]+)$/)
   if (m) return viewArticle(m[1])
   return viewHome()
 }
 addEventListener('hashchange', route)
-route()
+refreshMe().then(route)
 </script>
 </body>
 </html>

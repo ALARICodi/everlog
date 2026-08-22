@@ -10,6 +10,9 @@ import { sync as gitSync } from './lib/gitsync.js'
 import * as store from './lib/store.js'
 import * as ar from './lib/arweave.js'
 import * as ots from './lib/ots.js'
+import * as users from './lib/users.js'
+import * as session from './lib/session.js'
+import * as sharekey from './lib/sharekey.js'
 // 上链前审核暂时关闭(lib/moderate.js 保留,以后要开时把 pipeline 里那段接回来)。
 // 注意:关掉之后任何投稿都会直接永久上链,且由本站钱包签名。
 
@@ -26,9 +29,183 @@ const ADMIN_KEY =
 const app = express()
 // 贴着实际上限给,超了在入口就以清楚的理由拒绝,而不是收下十倍垃圾再走到深处报错
 app.use(express.json({ limit: '256kb' }))
+app.use(session.attachUser)   // 每个请求都填好 req.userId(没登录就是 null)
 app.use(express.static(path.join(HERE, 'public')))
 
 await store.init()
+await users.init()
+await sharekey.init()
+
+/* ------------------------------------------------------------ 账号
+   与版本1 的唯一区别就是这一块。发布链路、证明、验证器全都没动。
+
+   默认**不强制登录**,和版本1 保持一致 —— 登录只是为了「以后能找回自己的文章」,
+   不是发布的门槛。要改成必须登录,把 EVERLOG_REQUIRE_LOGIN 设成 1。 */
+const REQUIRE_LOGIN = process.env.EVERLOG_REQUIRE_LOGIN === '1'
+
+/* --- 注册向导:用户号在走完密码 + 人脸、点「生成唯一账户」那一刻才分配 ---
+
+   所以第一步不能建号 —— 建了号码就已经存在了,和「点按钮才生成」矛盾。
+   办法和锚点信封一样:把口令哈希扣在服务端,只发一个 token 出去,
+   最后一步凭 token 才真正落盘。中途放弃不留任何痕迹。 */
+const pendingReg = new Map()   // token -> { passwordHash, faceEnrolled, at }
+const REG_TTL = 30 * 60e3
+
+function prunePendingReg() {
+  const cutoff = Date.now() - REG_TTL
+  for (const [k, v] of pendingReg) if (v.at < cutoff) pendingReg.delete(k)
+}
+
+// 第一步:只收密码。**没有显示名** —— 这个站不提供起网名的机会。
+app.post('/api/enroll/begin', (req, res) => {
+  try {
+    const passwordHash = users.prepPassword(req.body?.password)
+    prunePendingReg()
+    const token = crypto.randomBytes(18).toString('base64url')
+    pendingReg.set(token, { passwordHash, faceEnrolled: false, at: Date.now() })
+    res.json({ token })
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+// 第二步:人脸。**刻意不写实现** —— 活体检测、特征提取、模板存储、防照片攻击
+// 是个独立模块,以后单独做。现在只占位,让流程完整可走通。
+app.post('/api/enroll/face', (req, res) => {
+  const rec = pendingReg.get(req.body?.token)
+  if (!rec) return res.status(400).json({ error: '注册流程已过期,请重新开始' })
+  rec.faceEnrolled = false   // 模块接入后这里置 true
+  res.json({ ok: true, enrolled: false, note: '人脸识别模块尚未接入,本步暂时跳过' })
+})
+
+// 第三步:真实姓名。也只是扣在服务端 —— 账号仍未创建。
+app.post('/api/enroll/name', (req, res) => {
+  const rec = pendingReg.get(req.body?.token)
+  if (!rec) return res.status(400).json({ error: '注册流程已过期,请重新开始' })
+  const a = users.normalizeName(req.body?.name1)
+  const b = users.normalizeName(req.body?.name2)
+  if (!a) return res.status(400).json({ error: '姓名不能为空' })
+  if (a !== b) return res.status(400).json({ error: '两次输入的姓名不一致' })
+  if (a.length > 60) return res.status(400).json({ error: '姓名过长' })
+  rec.realName = a
+  res.json({ ok: true })
+})
+
+// 「生成账号」:到这一刻,号码、人脸、姓名一次性落盘。之前中途放弃不留痕迹。
+app.post('/api/enroll/finish', async (req, res) => {
+  const rec = pendingReg.get(req.body?.token)
+  if (!rec) return res.status(400).json({ error: '注册流程已过期,请重新开始' })
+  if (!rec.realName) return res.status(400).json({ error: '还没填真实姓名' })
+  try {
+    const u = await users.createAccount(rec.passwordHash, rec.faceEnrolled, rec.realName)
+    pendingReg.delete(req.body.token)
+    session.setCookie(res, session.issue(u.id))
+    res.json(u)
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+app.post('/api/login', async (req, res) => {
+  try {
+    // account 可以是用户号,也可以是真实姓名 —— 服务端自动分辨
+    const u = await users.login(req.body?.account ?? req.body?.id, req.body?.password)
+    session.setCookie(res, session.issue(u.id))
+    res.json(u)
+  } catch (e) {
+    res.status(401).json({ error: e.message })
+  }
+})
+
+app.post('/api/logout', (req, res) => {
+  session.clearCookie(res)
+  res.json({ ok: true })
+})
+
+app.get('/api/me', async (req, res) => {
+  if (!req.userId) return res.json({ user: null, requireLogin: REQUIRE_LOGIN })
+  res.json({ user: await users.progress(req.userId), requireLogin: REQUIRE_LOGIN })
+})
+
+app.post('/api/me/password', session.requireLogin, async (req, res) => {
+  try {
+    await users.changePassword(req.userId, req.body?.oldPassword, req.body?.newPassword)
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+/* --------------------------------------------------- 分享密钥
+
+   A 生成一串 W,私下给 B;B 在查询框粘贴 W,就能看到 A 的姓名和全部文章。
+   W = sha256(一份含 32 字节随机数的文件)。服务端只存 sha256(W)。 */
+
+app.post('/api/sharekey', session.requireLogin, async (req, res) => {
+  try {
+    const r = await sharekey.create(req.userId, req.body?.duration, req.body?.note)
+    // key 和 file 只在这一次响应里出现,服务端不留 —— 之后我们自己也算不出来
+    res.json(r)
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+app.get('/api/sharekey', session.requireLogin, async (req, res) => {
+  res.json(await sharekey.listFor(req.userId))
+})
+
+app.delete('/api/sharekey/:id', session.requireLogin, async (req, res) => {
+  try {
+    await sharekey.revoke(req.userId, req.params.id)
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+/**
+ * 凭密钥查询。**不需要登录** —— 拿到密钥的人未必是本站用户。
+ * 限流是必需的:这是个能验证秘密的接口,不限流就成了在线爆破机。
+ */
+const queryHits = new Map()
+function queryLimit(req, res, next) {
+  const ip = req.headers['cf-connecting-ip'] || req.ip
+  const min = Math.floor(Date.now() / 60000)
+  const key = `${ip}:${min}`
+  if (queryHits.size > 3000) queryHits.clear()
+  const n = (queryHits.get(key) || 0) + 1
+  queryHits.set(key, n)
+  if (n > 20) return res.status(429).json({ error: '查询太频繁,请稍后再试' })
+  next()
+}
+
+app.post('/api/query', queryLimit, async (req, res) => {
+  const r = await sharekey.resolve(req.body?.key)
+  if (!r.ok) return res.status(404).json({ error: r.reason })
+
+  const u = await users.read(r.userId)
+  if (!u) return res.status(404).json({ error: '这把密钥对应的账号已不存在' })
+
+  const all = await store.list()
+  res.json({
+    // 密钥持有者是被授权的,给全名。没绑过实名的账号就只有一个用户号 ——
+    // 这个站没有网名,所以「是谁」要么是真名,要么什么都不是。
+    realName: u.realNameEnc ? users.decryptName(u.realNameEnc) : null,
+    userId: u.id,
+    status: u.status || 'pending',
+    createdAt: u.createdAt,
+    keyExpiresAt: r.expiresAt,
+    note: r.note,
+    articles: all.filter(m => m.owner === u.id),
+  })
+})
+
+/** 我的文章 —— 账号系统存在的主要理由:换台设备也能找回来 */
+app.get('/api/mine', session.requireLogin, async (req, res) => {
+  const all = await store.list()
+  res.json(all.filter(m => m.owner === req.userId))
+})
 
 /* ---------------------------------------------------------------- 限流
    每次发布都是一次不可撤销的永久上链,还带着本站钱包的签名。刷不得。
@@ -160,6 +337,7 @@ async function pipeline(id, input) {
     date: p.date,
     sha256: r.sha256,
     byteLength: r.byteLength,
+    owner: input.owner || null,   // 只存在 meta.json 里,不进 article.txt
     // 时间下界:这两个区块在文档诞生前不可预测,所以文档必然写于它们之后。
     notBefore: {
       bitcoin: {
@@ -288,6 +466,9 @@ async function recoverOrphans() {
 }
 
 app.post('/api/publish', rateLimit, async (req, res) => {
+  if (REQUIRE_LOGIN && !req.userId) {
+    return res.status(401).json({ error: '本站需要登录后才能发布' })
+  }
   // 只认 token,信封从服务端自己的抽屉里取 —— 前端给什么 anchors 一律不看
   const rec = envelopes.get(req.body?.token)
   if (!rec) {
@@ -303,6 +484,10 @@ app.post('/api/publish', rateLimit, async (req, res) => {
     title: req.body.title,
     author: req.body.author,
     body: req.body.body,
+    // 归属只是方便找回,**不写进文章字节** ——
+    // 写进去会改变规范格式,让 everlog/2 的证明和版本1 不通用。
+    // 而且账号也证明不了「谁写的」(署名仍是自称),没有理由污染那串永久字节。
+    owner: req.userId || null,
     ...rec.envelope,
   }).catch(e => {
     const j = jobs.get(id)
