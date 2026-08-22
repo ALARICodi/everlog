@@ -53,7 +53,11 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
   try {
-    const u = await users.login(String(req.body?.id || '').trim().toUpperCase(), req.body?.password)
+    const u = await users.login(
+      String(req.body?.id || '').trim().toUpperCase(),
+      req.body?.password,
+      req.body?.realName,
+    )
     session.setCookie(res, session.issue(u.id))
     res.json(u)
   } catch (e) {
@@ -68,11 +72,24 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/me', async (req, res) => {
   if (!req.userId) return res.json({ user: null, requireLogin: REQUIRE_LOGIN })
-  const u = await users.read(req.userId)
-  res.json({
-    user: u ? { id: u.id, displayName: u.displayName, createdAt: u.createdAt } : null,
-    requireLogin: REQUIRE_LOGIN,
-  })
+  res.json({ user: await users.progress(req.userId), requireLogin: REQUIRE_LOGIN })
+})
+
+/* --- 认证向导的后两步 --- */
+
+// 第二步:人脸。**这里刻意不写实现** —— 人脸识别是个大模块(活体检测、
+// 特征提取、模板存储、防照片攻击),以后单独做。现在只占位,让流程完整可走通。
+app.post('/api/enroll/face', session.requireLogin, async (_req, res) => {
+  res.json({ ok: true, enrolled: false, note: '人脸识别模块尚未接入,本步暂时跳过' })
+})
+
+// 第三步:实名绑定。两个输入框必须一致,绑定后不可更改。
+app.post('/api/enroll/name', session.requireLogin, async (req, res) => {
+  try {
+    res.json(await users.bindRealName(req.userId, req.body?.name1, req.body?.name2))
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
 })
 
 app.post('/api/me/name', session.requireLogin, async (req, res) => {
