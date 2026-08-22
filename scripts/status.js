@@ -89,6 +89,29 @@ async function main() {
     console.log(`  ${ok(exists)} ${label}`)
   }
 
+  /* ---- 服务在不在跑 ----
+     新会话不知道这个,会去起第二个进程,然后端口冲突或者悄悄用了旧代码。
+     先查一眼,比事后排查便宜得多。 */
+  console.log('\n服务')
+  for (const port of [8000, 8001]) {
+    const who = port === 8000 ? '版本1' : '版本2'
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/api/health`, {
+        signal: AbortSignal.timeout(2500),
+      })
+      const h = await r.json()
+      // 有没有账号接口,用来判断这个端口上跑的到底是哪个分支
+      const me = await fetch(`http://127.0.0.1:${port}/api/me`, {
+        signal: AbortSignal.timeout(2500),
+      }).then(x => x.headers.get('content-type') || '', () => '')
+      const kind = me.includes('json') ? '带账号(v2)' : '无账号(v1)'
+      console.log(`  ✅ :${port} 在跑 —— ${kind},上限 ${h.maxBytes}B` +
+                  (kind.includes('v2') === (who === '版本2') ? '' : '  ⚠ 和端口约定不符'))
+    } catch {
+      console.log(`  ⬜ :${port} 没在跑(${who})`)
+    }
+  }
+
   /* ---- git ---- */
   console.log('\n提示')
   console.log('  想知道某个决定为什么这么做:git log --grep 关键词')
