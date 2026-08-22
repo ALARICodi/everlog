@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node server.js",
     "upgrade": "node jobs/upgrade.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "status": "node scripts/status.js"
   },
   "keywords": [],
   "author": "",
