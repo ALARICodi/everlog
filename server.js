@@ -78,12 +78,26 @@ app.post('/api/enroll/face', (req, res) => {
   res.json({ ok: true, enrolled: false, note: '人脸识别模块尚未接入,本步暂时跳过' })
 })
 
-// 「生成唯一账户」:到这一刻才真正分配用户号并落盘
+// 第三步:真实姓名。也只是扣在服务端 —— 账号仍未创建。
+app.post('/api/enroll/name', (req, res) => {
+  const rec = pendingReg.get(req.body?.token)
+  if (!rec) return res.status(400).json({ error: '注册流程已过期,请重新开始' })
+  const a = users.normalizeName(req.body?.name1)
+  const b = users.normalizeName(req.body?.name2)
+  if (!a) return res.status(400).json({ error: '姓名不能为空' })
+  if (a !== b) return res.status(400).json({ error: '两次输入的姓名不一致' })
+  if (a.length > 60) return res.status(400).json({ error: '姓名过长' })
+  rec.realName = a
+  res.json({ ok: true })
+})
+
+// 「生成账号」:到这一刻,号码、人脸、姓名一次性落盘。之前中途放弃不留痕迹。
 app.post('/api/enroll/finish', async (req, res) => {
   const rec = pendingReg.get(req.body?.token)
   if (!rec) return res.status(400).json({ error: '注册流程已过期,请重新开始' })
+  if (!rec.realName) return res.status(400).json({ error: '还没填真实姓名' })
   try {
-    const u = await users.createAccount(rec.passwordHash, rec.faceEnrolled)
+    const u = await users.createAccount(rec.passwordHash, rec.faceEnrolled, rec.realName)
     pendingReg.delete(req.body.token)
     session.setCookie(res, session.issue(u.id))
     res.json(u)
@@ -94,11 +108,8 @@ app.post('/api/enroll/finish', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
   try {
-    const u = await users.login(
-      String(req.body?.id || '').trim().toUpperCase(),
-      req.body?.password,
-      req.body?.realName,
-    )
+    // account 可以是用户号,也可以是真实姓名 —— 服务端自动分辨
+    const u = await users.login(req.body?.account ?? req.body?.id, req.body?.password)
     session.setCookie(res, session.issue(u.id))
     res.json(u)
   } catch (e) {
@@ -114,15 +125,6 @@ app.post('/api/logout', (req, res) => {
 app.get('/api/me', async (req, res) => {
   if (!req.userId) return res.json({ user: null, requireLogin: REQUIRE_LOGIN })
   res.json({ user: await users.progress(req.userId), requireLogin: REQUIRE_LOGIN })
-})
-
-// 第三步:实名绑定(此时账号已存在,所以要登录态)。两次输入必须一致,绑定后不可改。
-app.post('/api/enroll/name', session.requireLogin, async (req, res) => {
-  try {
-    res.json(await users.bindRealName(req.userId, req.body?.name1, req.body?.name2))
-  } catch (e) {
-    res.status(400).json({ error: e.message })
-  }
 })
 
 app.post('/api/me/password', session.requireLogin, async (req, res) => {

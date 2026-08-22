@@ -459,16 +459,15 @@ $('#nav-out').onclick = async e => {
 function viewLogin() {
   app.innerHTML = `
     <h2>登录</h2>
-    <label for="uid">用户号</label>
-    <input id="uid" placeholder="U12345678" autocapitalize="characters" autocomplete="username">
+    <p class="muted">用<b>用户号</b>或<b>真实姓名</b>都可以,两种方式都要配上密码。</p>
+    <label for="acct">用户号 或 真实姓名</label>
+    <input id="acct" placeholder="U12345678  或  你的真实全名" autocomplete="username">
     <label for="pw">密码</label>
     <input id="pw" type="password" autocomplete="current-password">
     <label>人脸识别</label>
     <div class="soon" style="margin:8px 0 0;padding:14px">
       <span class="muted">模块尚未接入,登录时暂时跳过这一步</span>
     </div>
-    <label for="rn">真实姓名(注册时绑定的那个)</label>
-    <input id="rn" autocomplete="off" placeholder="没绑过就留空">
     <div class="row">
       <button id="go">登录</button>
       <a href="#/enroll"><button class="ghost">没有账号,去认证</button></a>
@@ -477,40 +476,20 @@ function viewLogin() {
     <p class="muted" style="margin-top:26px">账号只用来<b>以后找回自己的文章</b>。
        它不会写进文章字节,也不参与任何证明 —— 你已发布的东西,
        不需要这个网站、不需要账号,任何人都能独立验证。</p>`
-  $('#go').onclick = async () => {
+  const submit = async () => {
     $('#e').innerHTML = ''
     try {
       await api('/api/login', {
         method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ id: $('#uid').value, password: $('#pw').value, realName: $('#rn').value }),
+        body: JSON.stringify({ account: $('#acct').value, password: $('#pw').value }),
       })
       await refreshMe()
       location.hash = '#/mine'
     } catch (e) { $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>` }
   }
-  $('#rn').addEventListener('keydown', e => { if (e.key === 'Enter') $('#go').click() })
+  $('#go').onclick = submit
+  $('#pw').addEventListener('keydown', e => { if (e.key === 'Enter') submit() })
 }
-
-/* ------------------------------------------------------ 认证向导(三步) */
-
-function wizBar(step) {
-  const s = [['① 设密码','pw'], ['② 人脸识别','face'], ['③ 绑定真实姓名','name']]
-  return '<div class="wiz">' + s.map((x, i) => {
-    const n = i + 1
-    const cls = n < step ? 'ok' : (n === step ? 'now' : '')
-    return `<div class="${cls}"><b>第 ${n} 步</b>${x[0].replace(/^[①②③] /,'')}</div>`
-  }).join('') + '</div>'
-}
-
-function viewEnroll() {
-  // 账号已存在说明前两步走完了(号码是那时才生成的),只可能差绑名
-  if (!me) return enrollStep1()
-  if (!me.realNameBound) return enrollStep3()
-  return enrollDone()
-}
-
-// 注册向导期间的临时凭条。账号还没建,只有这个 token 串起三步。
-let regToken = null
 
 function enrollStep1() {
   app.innerHTML = `
@@ -541,6 +520,7 @@ function enrollStep1() {
         body: JSON.stringify({ password: $('#pw1').value }),
       })
       regToken = r.token
+      regPassword = $('#pw1').value
       enrollStep2()
     } catch (e) { $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>` }
   }
@@ -559,39 +539,17 @@ function enrollStep2() {
     <p class="muted">接入之后,人脸会成为登录的必要一环,也是这套身份体系里
        <b>唯一真正锚定到「人」</b>的东西 —— 用户号可以转手,密码可以告诉别人,
        姓名可以重名,只有这一项不行。</p>
-    <div class="row"><button class="seal" id="go">生成唯一账户</button></div>
+    <div class="row"><button id="go">下一步</button></div>
     <div id="e"></div>`
   $('#go').onclick = async () => {
     $('#e').innerHTML = ''
-    $('#go').disabled = true
     try {
       await api('/api/enroll/face', {
         method:'POST', headers:{'content-type':'application/json'},
         body: JSON.stringify({ token: regToken }),
       })
-      // 到这一刻才真正建号、分配号码
-      const u = await api('/api/enroll/finish', {
-        method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ token: regToken }),
-      })
-      regToken = null
-      await refreshMe()
-      app.innerHTML = `
-        <h2>用户号已生成</h2>
-        ${wizBar(3)}
-        <div class="proof" style="border-color:var(--seal)">
-          <div class="proof-h">你的用户号 · 已锁死,不可更改</div>
-          <dl><dd style="font-size:27px;letter-spacing:.14em;padding:10px 0">${u.id}</dd></dl>
-        </div>
-        <div class="warnbox"><b>现在就记下来。</b>本站不收邮箱、不收手机号,
-          所以<b>没有任何找回途径</b>。号丢了账号就永久进不去了
-          —— 但已发布的文章和证明不受影响,它们本来就不依赖账号。</div>
-        <div class="row"><button id="next">记好了,去绑定姓名</button></div>`
-      $('#next').onclick = () => enrollStep3()
-    } catch (e) {
-      $('#go').disabled = false
-      $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>`
-    }
+      enrollStep3()
+    } catch (e) { $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>` }
   }
 }
 
@@ -600,26 +558,68 @@ function enrollStep3() {
     <h2>绑定真实姓名</h2>
     ${wizBar(3)}
     <p class="muted">请输入两次完全一致的真实全名。<b>绑定后不可更改</b>,
-       并且会成为你以后登录时必填的一项。</p>
+       以后可以用它代替用户号登录。</p>
     <label for="n1">真实全名</label>
     <input id="n1" autocomplete="off">
     <label for="n2">再输一遍</label>
     <input id="n2" autocomplete="off">
-    <div class="row"><button id="go">确认绑定</button></div>
+    <div class="row"><button class="seal" id="go">生成账号</button></div>
     <div id="e"></div>
-    <p class="muted" style="margin-top:26px">姓名<b>只存哈希,不存明文</b> ——
-       验证一个凭证只需要能比对,不需要能读出来。页面上只会显示掩码(如 陈**)。</p>`
+    <p class="muted" style="margin-top:26px">点下这个按钮,才会真正建号并分配用户号。
+       在此之前你填的一切都只是暂存,中途关掉不留任何痕迹。</p>`
+  $('#n2').addEventListener('keydown', e => { if (e.key === 'Enter') $('#go').click() })
   $('#go').onclick = async () => {
     $('#e').innerHTML = ''
+    $('#go').disabled = true
     try {
       await api('/api/enroll/name', {
         method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ name1: $('#n1').value, name2: $('#n2').value }),
+        body: JSON.stringify({ token: regToken, name1: $('#n1').value, name2: $('#n2').value }),
       })
+      // 到这一刻,号码 + 人脸 + 姓名 一次性落盘
+      const u = await api('/api/enroll/finish', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ token: regToken }),
+      })
+      regToken = null
       await refreshMe()
-      enrollDone()
-    } catch (e) { $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>` }
+      enrollSuccess(u)
+    } catch (e) {
+      $('#go').disabled = false
+      $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>`
+    }
   }
+}
+
+/** 认证成功页:一次性把三样凭证摆出来 */
+function enrollSuccess(u) {
+  // 密码掩码在浏览器本地算 —— 服务端从没存过明文,也不该在响应里回传它
+  const pw = regPassword || ''
+  const pwMask = pw ? pw[0] + '*'.repeat(Math.max(pw.length - 1, 0)) : '(已设置)'
+  regPassword = null
+
+  app.innerHTML = `
+    <h2>账号认证成功</h2>
+    ${wizBar(4)}
+    <div class="proof" style="border-color:var(--ok)">
+      <div class="proof-h">你的凭证 · 请立刻记下</div>
+      <dl>
+        <dt>本账号 ID</dt>
+        <dd style="font-size:25px;letter-spacing:.14em;padding:8px 0">${esc(u.id)}</dd>
+        <dt>姓名</dt><dd style="font-size:17px">${esc(u.realNameMasked || '')}</dd>
+        <dt>密码</dt><dd style="font-size:17px">${esc(pwMask)}</dd>
+      </dl>
+    </div>
+    <div class="warnbox"><b>以后两种方式都能登录:</b><br>
+      用户号 <b>${esc(u.id)}</b> + 密码<br>
+      真实姓名 + 密码<br><br>
+      本站不收邮箱、不收手机号,<b>没有任何找回途径</b>。
+      号和姓名都忘了,账号就永久进不去 —— 但已发布的文章和证明不受影响,
+      它们本来就不依赖账号。</div>
+    <div class="row">
+      <a href="#/write"><button>去写一篇</button></a>
+      <a href="#/keys"><button class="ghost">分享密钥</button></a>
+    </div>`
 }
 
 function enrollDone() {
@@ -634,7 +634,7 @@ function enrollDone() {
         <dt>人脸</dt><dd><span class="pill wait">模块未接入</span></dd>
       </dl>
     </div>
-    <p class="muted">以后登录需要:<b>用户号 + 密码 + 真实姓名</b>(人脸接入后再加一项)。</p>
+    <p class="muted">登录方式:<b>用户号 + 密码</b>,或 <b>真实姓名 + 密码</b>(人脸接入后再加一项)。</p>
     <div class="row">
       <a href="#/write"><button>去写一篇</button></a>
       <a href="#/mine"><button class="ghost">我的文章</button></a>
