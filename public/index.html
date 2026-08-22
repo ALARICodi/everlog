@@ -189,7 +189,7 @@ function viewWrite() {
   app.innerHTML = `
     <h2>写一篇</h2>
     <label for="t">标题</label><input id="t" value="${esc(draft.title)}" placeholder="一句话说清楚">
-    <label for="a">署名</label><input id="a" value="${esc(draft.author || (me ? me.displayName : ''))}" placeholder="你希望永久留在链上的名字">
+    <label for="a">署名</label><input id="a" value="${esc(draft.author)}" placeholder="你希望永久留在链上的名字">
     ${me ? `<p class="muted" style="margin-top:6px">已登录 <b>${me.id}</b>,这篇会记在你名下(方便以后找回)。
       注意:<b>署名仍然只是自称</b> —— 账号不参与证明,它证明不了「谁写的」。</p>`
          : `<div class="warnbox" style="margin:14px 0 0;font-size:13.5px">
@@ -432,7 +432,7 @@ async function viewArticle(id) {
 }
 
 /* -------------------------------------------------------------- 账号 */
-let me = null   // { id, displayName } 或 null
+let me = null   // { id, status, realNameBound, realNameMasked } 或 null
 
 async function refreshMe() {
   try { me = (await api('/api/me')).user } catch { me = null }
@@ -503,21 +503,22 @@ function wizBar(step) {
 }
 
 function viewEnroll() {
-  // 已登录:接着没走完的那一步;未登录:从第一步开始
+  // 账号已存在说明前两步走完了(号码是那时才生成的),只可能差绑名
   if (!me) return enrollStep1()
-  if (!me.faceEnrolled && me.status === 'pending' && !me.realNameBound) return enrollStep2()
-  if (!me.realNameBound) return enrollStep2()
+  if (!me.realNameBound) return enrollStep3()
   return enrollDone()
 }
+
+// 注册向导期间的临时凭条。账号还没建,只有这个 token 串起三步。
+let regToken = null
 
 function enrollStep1() {
   app.innerHTML = `
     <h2>认证你的唯一账号</h2>
     ${wizBar(1)}
-    <p class="muted">用户号由系统随机分配,<b>不可更改</b>,格式是 U + 8 位数字(不含 0)。
-       它是你以后登录的唯一凭证。</p>
-    <label for="dn">显示名(可改,随便填)</label>
-    <input id="dn" placeholder="别人看到的名字">
+    <p class="muted"><b>这个站没有网名。</b>一个账号只由两样东西标识:
+       系统分配的用户号,和你之后绑定的真实姓名 —— 都不是你能随口编的。<br>
+       用户号会在下一步完成后自动生成,格式 U + 8 位数字(不含 0),<b>生成即锁死</b>。</p>
     <label for="pw1">设置密码(至少 8 位)</label>
     <input id="pw1" type="password" autocomplete="new-password">
     <label for="pw2">再输一遍</label>
@@ -527,29 +528,20 @@ function enrollStep1() {
       <a href="#/login"><button class="ghost">已有账号,去登录</button></a>
     </div>
     <div id="e"></div>`
+  $('#pw2').addEventListener('keydown', e => { if (e.key === 'Enter') $('#go').click() })
   $('#go').onclick = async () => {
     $('#e').innerHTML = ''
     if ($('#pw1').value !== $('#pw2').value) {
       return $('#e').innerHTML = '<p class="err">两次密码不一样</p>'
     }
     try {
-      const u = await api('/api/register', {
+      // 只把密码扣在服务端,拿一个 token。**此刻还没有账号,也还没有号码。**
+      const r = await api('/api/enroll/begin', {
         method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ password: $('#pw1').value, displayName: $('#dn').value }),
+        body: JSON.stringify({ password: $('#pw1').value }),
       })
-      await refreshMe()
-      app.innerHTML = `
-        <h2>用户号已分配</h2>
-        ${wizBar(2)}
-        <div class="proof" style="border-color:var(--seal)">
-          <div class="proof-h">你的用户号 · 不可更改</div>
-          <dl><dd style="font-size:27px;letter-spacing:.14em;padding:10px 0">${u.id}</dd></dl>
-        </div>
-        <div class="warnbox"><b>现在就记下来。</b>本站不收邮箱、不收手机号,
-          所以<b>没有任何找回途径</b>。号丢了账号就永久进不去了
-          —— 但已发布的文章和证明不受影响,它们本来就不依赖账号。</div>
-        <div class="row"><button id="next">记好了,继续</button></div>`
-      $('#next').onclick = () => enrollStep2()
+      regToken = r.token
+      enrollStep2()
     } catch (e) { $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>` }
   }
 }
@@ -567,10 +559,39 @@ function enrollStep2() {
     <p class="muted">接入之后,人脸会成为登录的必要一环,也是这套身份体系里
        <b>唯一真正锚定到「人」</b>的东西 —— 用户号可以转手,密码可以告诉别人,
        姓名可以重名,只有这一项不行。</p>
-    <div class="row"><button id="go">暂时跳过,继续下一步</button></div>`
+    <div class="row"><button class="seal" id="go">生成唯一账户</button></div>
+    <div id="e"></div>`
   $('#go').onclick = async () => {
-    try { await api('/api/enroll/face', { method:'POST' }) } catch {}
-    enrollStep3()
+    $('#e').innerHTML = ''
+    $('#go').disabled = true
+    try {
+      await api('/api/enroll/face', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ token: regToken }),
+      })
+      // 到这一刻才真正建号、分配号码
+      const u = await api('/api/enroll/finish', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ token: regToken }),
+      })
+      regToken = null
+      await refreshMe()
+      app.innerHTML = `
+        <h2>用户号已生成</h2>
+        ${wizBar(3)}
+        <div class="proof" style="border-color:var(--seal)">
+          <div class="proof-h">你的用户号 · 已锁死,不可更改</div>
+          <dl><dd style="font-size:27px;letter-spacing:.14em;padding:10px 0">${u.id}</dd></dl>
+        </div>
+        <div class="warnbox"><b>现在就记下来。</b>本站不收邮箱、不收手机号,
+          所以<b>没有任何找回途径</b>。号丢了账号就永久进不去了
+          —— 但已发布的文章和证明不受影响,它们本来就不依赖账号。</div>
+        <div class="row"><button id="next">记好了,去绑定姓名</button></div>`
+      $('#next').onclick = () => enrollStep3()
+    } catch (e) {
+      $('#go').disabled = false
+      $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>`
+    }
   }
 }
 
@@ -609,7 +630,6 @@ function enrollDone() {
       <div class="proof-h">你的账号</div>
       <dl>
         <dt>用户号</dt><dd style="font-size:20px;letter-spacing:.1em">${me.id}</dd>
-        <dt>显示名</dt><dd>${esc(me.displayName)}</dd>
         <dt>真实姓名</dt><dd>${me.realNameMasked ? esc(me.realNameMasked) + ' <span class="pill ok">已绑定</span>' : '未绑定'}</dd>
         <dt>人脸</dt><dd><span class="pill wait">模块未接入</span></dd>
       </dl>
@@ -627,7 +647,7 @@ async function viewMine() {
   const list = await api('/api/mine')
   app.innerHTML = `
     <h2>我的文章</h2>
-    <p class="muted">用户号 <b>${me.id}</b> · 显示名 ${esc(me.displayName)}</p>` +
+    <p class="muted">用户号 <b>${me.id}</b>${me.realNameMasked ? ' · 已实名 ' + esc(me.realNameMasked) : ' · 未实名'}</p>` +
     (list.length ? list.map(m => `
       <a class="item" href="#/a/${m.id}">
         <h3>${esc(m.title)}</h3>
@@ -651,7 +671,11 @@ async function viewKeys() {
   app.innerHTML = `
     <h2>分享密钥</h2>
     <p class="muted">生成一串密钥,私下发给你信任的人。对方在<a href="#/query">查询</a>页粘贴它,
-       就能看到你的<b>真实姓名</b>和<b>你名下的全部文章</b>。到期自动失效,也可以随时撤销。</p>
+       就能看到你的<b>真实姓名</b>和<b>你名下的全部文章</b>。到期自动失效,也可以随时单独撤销。</p>
+    <p class="muted"><b>最多同时有 3 把有效密钥</b> —— 现在有
+       <b>${list.filter(k => !k.revoked && !k.expired).length} 把</b>。
+       过期的和已撤销的不占名额。密钥能看到真名和全部文章,散出去越多越难收回,
+       所以逼你先撤掉不用的那把,才是对你有利的默认。</p>
 
     <label>有效期</label>
     <div class="row" style="margin-top:8px" id="durs">
@@ -753,7 +777,6 @@ function viewQuery() {
           <div class="proof-h">密钥有效</div>
           <dl>
             <dt>真实姓名</dt><dd style="font-size:18px">${r.realName ? esc(r.realName) : '<span class="muted">该账号尚未完成实名绑定</span>'}</dd>
-            <dt>显示名</dt><dd>${esc(r.displayName)}</dd>
             <dt>用户号</dt><dd>${esc(r.userId)}</dd>
             <dt>账号创建于</dt><dd>${esc(r.createdAt.replace('T',' ').slice(0,16))}</dd>
             <dt>本密钥到期</dt><dd>${esc(r.keyExpiresAt.replace('T',' ').slice(0,16))}</dd>

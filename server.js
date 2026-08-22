@@ -43,9 +43,48 @@ await sharekey.init()
    不是发布的门槛。要改成必须登录,把 EVERLOG_REQUIRE_LOGIN 设成 1。 */
 const REQUIRE_LOGIN = process.env.EVERLOG_REQUIRE_LOGIN === '1'
 
-app.post('/api/register', async (req, res) => {
+/* --- 注册向导:用户号在走完密码 + 人脸、点「生成唯一账户」那一刻才分配 ---
+
+   所以第一步不能建号 —— 建了号码就已经存在了,和「点按钮才生成」矛盾。
+   办法和锚点信封一样:把口令哈希扣在服务端,只发一个 token 出去,
+   最后一步凭 token 才真正落盘。中途放弃不留任何痕迹。 */
+const pendingReg = new Map()   // token -> { passwordHash, faceEnrolled, at }
+const REG_TTL = 30 * 60e3
+
+function prunePendingReg() {
+  const cutoff = Date.now() - REG_TTL
+  for (const [k, v] of pendingReg) if (v.at < cutoff) pendingReg.delete(k)
+}
+
+// 第一步:只收密码。**没有显示名** —— 这个站不提供起网名的机会。
+app.post('/api/enroll/begin', (req, res) => {
   try {
-    const u = await users.register(req.body?.password, req.body?.displayName)
+    const passwordHash = users.prepPassword(req.body?.password)
+    prunePendingReg()
+    const token = crypto.randomBytes(18).toString('base64url')
+    pendingReg.set(token, { passwordHash, faceEnrolled: false, at: Date.now() })
+    res.json({ token })
+  } catch (e) {
+    res.status(400).json({ error: e.message })
+  }
+})
+
+// 第二步:人脸。**刻意不写实现** —— 活体检测、特征提取、模板存储、防照片攻击
+// 是个独立模块,以后单独做。现在只占位,让流程完整可走通。
+app.post('/api/enroll/face', (req, res) => {
+  const rec = pendingReg.get(req.body?.token)
+  if (!rec) return res.status(400).json({ error: '注册流程已过期,请重新开始' })
+  rec.faceEnrolled = false   // 模块接入后这里置 true
+  res.json({ ok: true, enrolled: false, note: '人脸识别模块尚未接入,本步暂时跳过' })
+})
+
+// 「生成唯一账户」:到这一刻才真正分配用户号并落盘
+app.post('/api/enroll/finish', async (req, res) => {
+  const rec = pendingReg.get(req.body?.token)
+  if (!rec) return res.status(400).json({ error: '注册流程已过期,请重新开始' })
+  try {
+    const u = await users.createAccount(rec.passwordHash, rec.faceEnrolled)
+    pendingReg.delete(req.body.token)
     session.setCookie(res, session.issue(u.id))
     res.json(u)
   } catch (e) {
@@ -77,26 +116,10 @@ app.get('/api/me', async (req, res) => {
   res.json({ user: await users.progress(req.userId), requireLogin: REQUIRE_LOGIN })
 })
 
-/* --- 认证向导的后两步 --- */
-
-// 第二步:人脸。**这里刻意不写实现** —— 人脸识别是个大模块(活体检测、
-// 特征提取、模板存储、防照片攻击),以后单独做。现在只占位,让流程完整可走通。
-app.post('/api/enroll/face', session.requireLogin, async (_req, res) => {
-  res.json({ ok: true, enrolled: false, note: '人脸识别模块尚未接入,本步暂时跳过' })
-})
-
-// 第三步:实名绑定。两个输入框必须一致,绑定后不可更改。
+// 第三步:实名绑定(此时账号已存在,所以要登录态)。两次输入必须一致,绑定后不可改。
 app.post('/api/enroll/name', session.requireLogin, async (req, res) => {
   try {
     res.json(await users.bindRealName(req.userId, req.body?.name1, req.body?.name2))
-  } catch (e) {
-    res.status(400).json({ error: e.message })
-  }
-})
-
-app.post('/api/me/name', session.requireLogin, async (req, res) => {
-  try {
-    res.json(await users.setDisplayName(req.userId, req.body?.displayName))
   } catch (e) {
     res.status(400).json({ error: e.message })
   }
@@ -164,9 +187,9 @@ app.post('/api/query', queryLimit, async (req, res) => {
 
   const all = await store.list()
   res.json({
-    // 密钥持有者是被授权的,给全名;没绑过实名的就只有显示名
+    // 密钥持有者是被授权的,给全名。没绑过实名的账号就只有一个用户号 ——
+    // 这个站没有网名,所以「是谁」要么是真名,要么什么都不是。
     realName: u.realNameEnc ? users.decryptName(u.realNameEnc) : null,
-    displayName: u.displayName,
     userId: u.id,
     status: u.status || 'pending',
     createdAt: u.createdAt,
