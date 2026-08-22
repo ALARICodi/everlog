@@ -1,0 +1,18 @@
+# ⚠️ 这个文件是证据完整性的保命符,不要删,不要改。
+#
+# Git 在 Windows 上默认会做换行符转换(LF ↔ CRLF)。对普通源码这是便利,
+# 对这个仓库是灾难:data/ 里的 article.txt 是**哈希原像本身**,
+# 换行从 \n 变成 \r\n,每行多一个字节,sha256 完全不同,所有比特币证明当场作废。
+#
+# 所以 data/ 下一律按二进制对待,git 不许碰其中任何一个字节。
+
+data/**        -text
+*.ots          binary
+
+# 源码正常处理,但统一用 LF,免得在不同机器上来回翻动
+*.js           text eol=lf
+*.json         text eol=lf
+*.html         text eol=lf
+*.md           text eol=lf
+.gitignore     text eol=lf
+.gitattributes text eol=lf

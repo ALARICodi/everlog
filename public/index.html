@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>everlog · 让思想有据可查</title>
+<style>
+:root{
+  --paper:#faf8f4; --ink:#17150f; --ink-2:#4a463c; --ink-3:#8b8578;
+  --rule:#ddd7cb; --rule-2:#c9c2b2;
+  --seal:#9a2617; --ok:#2f6b3c; --warn:#8a6100;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --serif:"Iowan Old Style",Georgia,"Songti SC","Source Han Serif SC","Noto Serif CJK SC",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --paper:#12110e; --ink:#e8e4da; --ink-2:#a8a294; --ink-3:#6f6a5e;
+         --rule:#2b2822; --rule-2:#3d392f; --seal:#c9553f; --ok:#5fa06e; --warn:#c49a3a; }
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper); color:var(--ink); font-family:var(--sans);
+  font-size:17px; line-height:1.7; -webkit-text-size-adjust:100%;
+  padding:0 20px calc(56px + env(safe-area-inset-bottom));
+}
+.wrap{max-width:660px;margin:0 auto}
+
+/* ---- 页眉:像书的版权页,不像导航栏 ---- */
+header{padding:34px 0 20px;border-bottom:1px solid var(--rule);margin-bottom:30px}
+.brand{font-family:var(--mono);font-size:13px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3)}
+.brand b{color:var(--ink);font-weight:600}
+.tagline{font-family:var(--serif);font-size:22px;line-height:1.45;margin:14px 0 0;font-weight:400}
+.tagline em{font-style:normal;border-bottom:2px solid var(--seal);padding-bottom:1px}
+.sub{color:var(--ink-2);font-size:14px;margin-top:10px}
+
+nav{display:flex;gap:22px;margin-top:22px;font-size:14px}
+nav a{color:var(--ink-3);text-decoration:none;border-bottom:1px solid transparent;padding-bottom:2px}
+nav a.on{color:var(--ink);border-color:var(--seal)}
+
+/* ---- 通用 ---- */
+h2{font-family:var(--serif);font-weight:500;font-size:21px;margin:0 0 16px}
+label{display:block;font-size:13px;letter-spacing:.06em;color:var(--ink-3);margin:22px 0 7px;text-transform:uppercase}
+input,textarea{
+  width:100%;background:transparent;color:var(--ink);border:0;border-bottom:1px solid var(--rule-2);
+  font-family:var(--serif);font-size:18px;padding:8px 0;line-height:1.7;
+}
+textarea{min-height:44vh;resize:vertical;border:1px solid var(--rule);padding:14px;font-size:17px}
+input:focus,textarea:focus{outline:0;border-color:var(--seal)}
+button{
+  font-family:var(--sans);font-size:15px;padding:13px 22px;cursor:pointer;
+  background:var(--ink);color:var(--paper);border:0;letter-spacing:.04em;
+}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--rule-2)}
+button.seal{background:var(--seal);color:#fff}
+button:disabled{opacity:.4;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:26px}
+.muted{color:var(--ink-3);font-size:13px}
+.err{color:var(--seal);font-size:14px;margin-top:14px}
+
+/* ---- 凭据块:做成回执/印章的样子 ---- */
+.proof{border:1px solid var(--rule-2);margin:26px 0;background:transparent}
+.proof-h{
+  font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--ink-3);padding:11px 14px;border-bottom:1px solid var(--rule);
+}
+.proof dl{margin:0;padding:4px 14px 14px}
+.proof dt{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:13px}
+.proof dd{margin:3px 0 0;font-family:var(--mono);font-size:12.5px;word-break:break-all;line-height:1.6}
+.proof dd a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--rule-2)}
+.pill{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
+      text-transform:uppercase;padding:2px 7px;border:1px solid currentColor}
+.pill.ok{color:var(--ok)} .pill.wait{color:var(--warn)}
+
+/* ---- 文章列表 ---- */
+.item{display:block;text-decoration:none;color:inherit;padding:20px 0;border-bottom:1px solid var(--rule)}
+.item h3{font-family:var(--serif);font-weight:500;font-size:19px;margin:0 0 5px}
+.item .meta{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);letter-spacing:.05em}
+
+/* ---- 文章正文 ---- */
+article{font-family:var(--serif);font-size:19px;line-height:1.85;white-space:pre-wrap;word-break:break-word;margin:28px 0}
+.byline{font-family:var(--mono);font-size:12px;color:var(--ink-3);letter-spacing:.06em;margin-top:8px}
+h1.title{font-family:var(--serif);font-weight:500;font-size:27px;line-height:1.35;margin:0}
+
+/* ---- 确认屏:把真正要上链的字节原样摊开 ---- */
+pre.bytes{
+  font-family:var(--mono);font-size:12px;line-height:1.65;white-space:pre-wrap;word-break:break-all;
+  border:1px solid var(--rule);padding:14px;max-height:38vh;overflow:auto;margin:0;color:var(--ink-2);
+}
+.warnbox{border-left:3px solid var(--seal);padding:12px 0 12px 15px;margin:24px 0;font-size:14.5px;line-height:1.65}
+.warnbox b{color:var(--seal)}
+.steps{font-family:var(--mono);font-size:12.5px;line-height:2;color:var(--ink-2);margin:20px 0}
+.steps .d{color:var(--ok)} .steps .a{color:var(--ink)}
+code{font-family:var(--mono);font-size:12.5px;background:transparent}
+pre.cmd{font-family:var(--mono);font-size:12px;background:transparent;border:1px solid var(--rule);
+        padding:12px;overflow-x:auto;line-height:1.75;color:var(--ink-2)}
+/* ---- 下载闸门:灰 = 证明还没固化,亮 = 自包含可离线验证 ---- */
+.dl{border:1px solid var(--rule-2);padding:18px;margin:26px 0}
+.dl.ready{border-color:var(--seal)}
+.dl a{text-decoration:none}
+.dl button{width:100%;font-size:16px;padding:15px}
+.dl p{margin:13px 0 0;font-size:13.5px;line-height:1.7}
+footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--rule);font-size:12.5px;color:var(--ink-3);line-height:1.8}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><b>everlog</b> &nbsp;永久记录</div>
+    <p class="tagline">写下来,<em>然后没人能说这不是你写的</em>。</p>
+    <p class="sub">每篇文章同时获得三个独立时间戳:Arweave 永久存储、比特币区块锚定、Git 提交记录。任何人可自行验证,不需要相信这个网站。</p>
+    <nav>
+      <a href="#/" id="nav-home">已发表</a>
+      <a href="#/write" id="nav-write">写一篇</a>
+      <a href="#/mine" id="nav-mine" hidden>我的文章</a>
+      <a href="#/login" id="nav-login">登录</a>
+      <a href="#" id="nav-out" hidden>退出</a>
+    </nav>
+  </header>
+  <main id="app"></main>
+  <footer>
+    上链不可撤销。文章一旦写入 Arweave,任何人(包括本站)都无法删除或修改。<br>
+    纯文本,单篇上限 <span id="lim">96 KiB</span>(约 3.2 万汉字)。
+  </footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s)
+const app = $('#app')
+// 上限只有一个真理来源:服务端。前端不硬编码,免得两边悄悄对不上。
+let LIMIT = 96 * 1024
+fetch('/api/health').then(r => r.json()).then(h => {
+  LIMIT = h.maxBytes
+  $('#lim').textContent = Math.round(LIMIT / 1024) + ' KiB'
+}).catch(() => {})
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+const api = async (u, o) => {
+  const r = await fetch(u, o)
+  const j = await r.json().catch(() => ({ error: 'HTTP ' + r.status }))
+  if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status)
+  return j
+}
+
+/* ------------------------------------------------------------ 已发表列表 */
+async function viewHome() {
+  app.innerHTML = '<p class="muted">读取中…</p>'
+  const list = await api('/api/list')
+  if (!list.length) {
+    app.innerHTML = `<h2>还没有文章</h2>
+      <p class="muted">第一篇会永远留在这里,以及比特币和 Arweave 上。</p>
+      <div class="row"><a href="#/write"><button>写第一篇</button></a></div>`
+    return
+  }
+  app.innerHTML = list.map(m => `
+    <a class="item" href="#/a/${m.id}">
+      <h3>${esc(m.title)}</h3>
+      <div class="meta">${esc(m.author)} · ${m.date.slice(0,10)} · ${
+        m.bitcoin?.confirmed
+          ? '<span class="pill ok">比特币已确认</span>'
+          : '<span class="pill wait">比特币确认中</span>'}</div>
+    </a>`).join('')
+}
+
+/* ---------------------------------------------------------------- 写作 */
+let draft = { title:'', author:'', body:'' }
+
+function viewWrite() {
+  app.innerHTML = `
+    <h2>写一篇</h2>
+    <label for="t">标题</label><input id="t" value="${esc(draft.title)}" placeholder="一句话说清楚">
+    <label for="a">署名</label><input id="a" value="${esc(draft.author || (me ? me.displayName : ''))}" placeholder="你希望永久留在链上的名字">
+    ${me ? `<p class="muted" style="margin-top:6px">已登录 <b>${me.id}</b>,这篇会记在你名下(方便以后找回)。
+      注意:<b>署名仍然只是自称</b> —— 账号不参与证明,它证明不了「谁写的」。</p>`
+         : `<p class="muted" style="margin-top:6px">未登录也能发。
+      <a href="#/login">登录</a>之后发布的文章会记在你名下,换台设备也找得回来。</p>`}
+    <label for="b">正文</label><textarea id="b" placeholder="纯文本。写完先预览,确认字节无误再发布。">${esc(draft.body)}</textarea>
+    <div class="row">
+      <button id="go">预览并确认</button>
+      <span class="muted" id="count" style="align-self:center"></span>
+    </div>
+    <div id="e"></div>`
+
+  const upd = () => {
+    draft = { title:$('#t').value, author:$('#a').value, body:$('#b').value }
+    const n = new Blob([draft.body]).size
+    $('#count').textContent = `正文约 ${n} 字节 / 上限 ${LIMIT}`
+  }
+  ;['#t','#a','#b'].forEach(s => $(s).addEventListener('input', upd))
+  upd()
+
+  $('#go').onclick = async () => {
+    $('#e').innerHTML = ''
+    try {
+      const r = await api('/api/inspect', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify(draft),
+      })
+      if (r.overLimit) throw new Error(`超出上限:${r.byteLength} > ${r.maxBytes} 字节`)
+      viewConfirm(r)
+    } catch (e) { $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>` }
+  }
+}
+
+/* ------------------------------------------------ 二次确认:摊开真实字节 */
+function viewConfirm(r) {
+  app.innerHTML = `
+    <h2>确认发布</h2>
+    <p class="muted">下面这串字节就是将被永久写入 Arweave、并被 sha256 后锚进比特币的**全部内容**。
+       页面上显示的、链上存的、被哈希的,永远是同一个东西。</p>
+    <pre class="bytes">${esc(r.text)}</pre>
+    <div class="proof">
+      <div class="proof-h">发布前指纹</div>
+      <dl>
+        <dt>格式</dt><dd>${r.format}</dd>
+        <dt>字节数</dt><dd>${r.byteLength} / ${r.maxBytes}</dd>
+        <dt>SHA-256</dt><dd>${r.sha256}</dd>
+        <dt>时间下界 · 比特币</dt><dd>#${r.bounds.notBefore.bitcoin.height} · ${r.bounds.notBefore.bitcoin.time}</dd>
+        <dt>时间下界 · Arweave</dt><dd>#${r.bounds.notBefore.arweave.height} · ${r.bounds.notBefore.arweave.time}</dd>
+      </dl>
+    </div>
+    <p class="muted">上面那两个区块哈希已经写进正文头部,会和文字一起被哈希上链。
+       它们在被挖出之前不可预测,所以「文档里含有它们」就等于「文档写于它们诞生之后」——
+       这是时间的<b>下界</b>。上界由随后的上链动作给出。两条链各给一个区间,互相独立。</p>
+    <div class="warnbox">
+      <b>这一步不可撤销。</b>写入 Arweave 之后,你、我、任何人都无法删除或修改它。
+      本站可以下架显示,但链上那份会永远存在,并可被任何人取回。<br>
+      请确认署名正确、内容确实是你想永久公开的。
+    </div>
+    <div class="row">
+      <button class="ghost" id="back">返回修改</button>
+      <button class="seal" id="pub">确认,永久发布</button>
+    </div>
+    <div id="e"></div>`
+  $('#back').onclick = () => viewWrite()
+  $('#pub').onclick = async () => {
+    $('#pub').disabled = true
+    try {
+      // 只回传预览时拿到的 token。真正的 date/anchors 锁在服务端,
+      // 浏览器碰不到也就伪造不了 —— 同时确认屏上的 sha256 依然等于最终上链的。
+      const { id } = await api('/api/publish', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ ...draft, token: r.token }),
+      })
+      viewProgress(id)
+    } catch (e) {
+      $('#pub').disabled = false
+      $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>`
+    }
+  }
+}
+
+/* -------------------------------------------------------------- 进度 */
+const STEPS = [
+  ['canonical','固定字节'],
+  ['stamp-content','比特币时间戳(内容)'],
+  ['arweave','写入 Arweave'],
+  ['stamp-receipt','比特币时间戳(回执)'],
+  ['done','完成'],
+]
+
+function viewProgress(id) {
+  app.innerHTML = `<h2>发布中</h2>
+    <div class="steps" id="s"></div>
+    <div class="muted" id="l"></div>
+    <div id="e"></div>`
+  let misses = 0
+  const tick = async () => {
+    let j
+    try {
+      j = await api('/api/job/' + id)
+      misses = 0
+    } catch {
+      // 进度只存在服务端内存里,服务重启就没了。
+      // 这时不能无限重试转圈 —— 用户会以为失败了,回去再发一遍,
+      // 于是同一篇文章被永久上链两次,两次都签着本站的名,删不掉。
+      // 所以改成:直接去问这篇文章到底存不存在。
+      if (++misses < 3) return setTimeout(tick, 1500)
+      try {
+        await api('/api/a/' + id)
+        location.hash = '#/a/' + id      // 其实早就发成功了
+      } catch {
+        $('#e').innerHTML = `<div class="warnbox">
+          <b>看不到发布进度了</b>(服务可能重启过)。<br>
+          这篇文章<b>没有出现在已发表列表里</b>,说明它没有完成上链。<br><br>
+          <b>先去「已发表」确认一遍再决定要不要重发</b> ——
+          重复发布会在链上留下两份永久记录,删不掉。</div>
+          <div class="row"><button class="ghost" onclick="location.hash='#/'">去已发表看看</button></div>`
+      }
+      return
+    }
+    const idx = STEPS.findIndex(s => s[0] === j.step)
+    $('#s').innerHTML = STEPS.map(([k, label], i) => {
+      const done = idx > i || j.step === 'done'
+      const now = idx === i
+      return `<div class="${done?'d':(now?'a':'')}">${done?'✓':(now?'▸':'·')} ${label}</div>`
+    }).join('')
+    $('#l').innerHTML = j.log.map(x => esc(x)).join('<br>')
+
+    if (j.step === 'error') {
+      $('#e').innerHTML = `<p class="err">${esc(j.error)}</p>
+        <div class="row"><button class="ghost" onclick="location.hash='#/write'">返回</button></div>`
+      return
+    }
+    if (j.step === 'review') {
+      $('#e').innerHTML = `<div class="warnbox">这篇需要人工确认后才会上链。
+        文本已保存,通过后会自动完成全部三重时间戳。</div>`
+      return
+    }
+    if (j.step === 'done') { location.hash = '#/a/' + id; return }
+    setTimeout(tick, 1500)
+  }
+  tick()
+}
+
+/* -------------------------------------------------------------- 文章页 */
+async function viewArticle(id) {
+  app.innerHTML = '<p class="muted">读取中…</p>'
+  let m
+  try { m = await api('/api/a/' + id) }
+  catch (e) { app.innerHTML = `<p class="err">${esc(e.message)}</p>`; return }
+
+  // 时间区间:两条链各给一对「不早于 / 不晚于」。
+  // 下界来自文档里嵌入的区块哈希,上界来自文档哈希被锚进的区块。
+  const nb = m.notBefore
+  const bracket = !nb ? `
+      <dt>时间区间</dt><dd>本篇为 everlog/1 格式,只有上界,没有下界</dd>` : `
+      <dt>比特币 · 不早于</dt><dd>${nb.bitcoin.mtpTime
+        ? `${esc(nb.bitcoin.mtpTime)} <span class="muted">(#${nb.bitcoin.height} 的 MTP)</span>`
+        : `#${nb.bitcoin.height} <span class="muted">(严格下界计算中)</span>`}</dd>
+      <dt>比特币 · 不晚于</dt><dd>${
+        m.bitcoin?.confirmed
+          ? `#${m.bitcoin.height} · ${esc(m.bitcoin.attestedAt || '')} <span class="pill ok">已确认</span>`
+          : `<span class="pill wait">聚合中</span> 已提交 calendar,等待进块(1–2 小时)`}</dd>
+      <dt>Arweave · 不早于</dt><dd>#${nb.arweave.height} · ${esc(nb.arweave.time)}
+        <span class="muted">(区块标称时间)</span></dd>
+      <dt>Arweave · 不晚于</dt><dd>${
+        m.arweaveBlock
+          ? `#${m.arweaveBlock.height} · ${esc(m.arweaveBlock.time)} <span class="pill ok">已确认</span>`
+          // 数据早就上链且能取回,缺的只是网关的索引 —— 别让人误以为上传失败了
+          : `<span class="pill wait">编目中</span> 数据已在 Arweave 上(上面的链接现在就能取回),
+             网关还没建好索引,所以查不到它落在哪个区块。不影响证明。`}</dd>`
+
+  const arw = (m.arweave
+    ? `<dt>Arweave · 正文</dt><dd><a href="${m.arweave.url}" target="_blank" rel="noopener">${m.arweave.txid}</a></dd>`
+    : '') + (m.proofArweave
+    // 证明本身也上了 Arweave:这是整套东西里唯一不可再生的文件,
+    // 只存在我们硬盘上就等于把命门交给一块硬盘。
+    ? `<dt>Arweave · 证明</dt><dd><a href="${m.proofArweave.url}" target="_blank" rel="noopener">${m.proofArweave.txid}</a></dd>`
+    : '')
+
+  app.innerHTML = `
+    <h1 class="title">${esc(m.title)}</h1>
+    <div class="byline">${esc(m.author)} · ${esc(m.date)} <span class="muted">(自称,非证据)</span></div>
+    <article>${esc(m.body)}</article>
+
+    <div class="proof">
+      <div class="proof-h">凭据</div>
+      <dl>
+        <dt>内容 SHA-256</dt><dd>${m.sha256}</dd>
+        <dt>字节数</dt><dd>${m.byteLength} · ${esc(m.format || 'everlog/1')}</dd>
+        ${arw}
+        ${bracket}
+      </dl>
+    </div>
+    ${nb ? `<p class="muted">比特币那条「不早于」用的是 <b>MTP</b>(该区块前 11 块时间戳的中位数),
+      不是区块自己的标称时间 —— <b>区块时间戳是矿工填的,可以超前真实时间最多两小时</b>,
+      拿它当下界会超额宣称。MTP 由共识规则保证落在过去,松几十分钟,但站得住。<br>
+      Arweave 那条标的是区块标称时间,同样由矿工填写,没有做同等的严格处理 ——
+      <b>要较真请以比特币那条为准</b>,它是两条里唯一严格的。</p>` : ''}
+
+    ${m.proofComplete ? `
+    <div class="dl ready">
+      <a href="/api/a/${id}/bundle.zip"><button class="seal">⤓ 下载证明包(.zip)</button></a>
+      <p class="muted">包里是原文本身 + 全部兄弟哈希 + 区块号 + 验证说明。
+         <b>自包含</b>:断网也能验,不需要本站、不需要 Arweave、不需要任何服务器还活着。</p>
+    </div>` : `
+    <div class="dl">
+      <button disabled>⤓ 证明部署中…</button>
+      <p class="muted"><b>通常 1.5–2 小时后可下载。</b>要等两件事依次发生:<br>
+         <b>①</b> 你的哈希被攒进一批,树根写进比特币区块(10 分钟到 1 小时)<br>
+         <b>②</b> 那笔交易再积累 <b>6 个确认块</b>(约 1 小时)—— calendar 服务器
+         要等确认足够深、不可能被回滚了,才肯把兄弟哈希交出来<br>
+         在这之前下载的包缺了兄弟哈希,没法离线验证,所以按钮先锁着。
+         齐了会自动亮起,不用守着刷新。</p>
+    </div>`}
+
+    <h2>自己验证</h2>
+    <p class="muted">下面每一步都不需要信任本站。即便这个网站明天消失,四步照常成立。</p>
+    <pre class="cmd">1  内容没被改过
+   curl -s ${location.origin}/api/a/${id}/file/article.txt | sha256sum
+   应得到 ${m.sha256.slice(0,32)}…
+
+2  上界:文档哈希已锚进比特币
+   pip install opentimestamps-client
+   ots verify article.txt.ots -f article.txt${nb ? `
+
+3  下界:文档里嵌的区块是真的,且诞生于那个时刻
+   curl -s https://blockstream.info/api/block/${nb.bitcoin.hash} | grep timestamp
+   curl -s https://arweave.net/block/hash/${nb.arweave.hash} | grep timestamp
+   两个哈希在被挖出前不可预测 → 文档必然写于其后` : ''}
+
+4  从 Arweave 独立取回原文,不经过本站
+   curl -sL https://arweave.net/${m.arweave?.txid || '<txid>'}</pre>
+    ${nb ? `<p class="muted">第 2 步给上界,第 3 步给下界,两头一夹才是一个<b>有限区间</b>。
+       只有上界的时间戳,无法反驳「我十年前就写好了、今天才传」。</p>` : ''}
+    <div class="row"><a href="#/"><button class="ghost">返回列表</button></a></div>`
+}
+
+/* -------------------------------------------------------------- 账号 */
+let me = null   // { id, displayName } 或 null
+
+async function refreshMe() {
+  try { me = (await api('/api/me')).user } catch { me = null }
+  $('#nav-mine').hidden = !me
+  $('#nav-out').hidden = !me
+  $('#nav-login').hidden = !!me
+  if (me) $('#nav-login').textContent = me.id
+}
+
+$('#nav-out').onclick = async e => {
+  e.preventDefault()
+  await fetch('/api/logout', { method: 'POST' })
+  await refreshMe()
+  location.hash = '#/'
+  route()
+}
+
+function viewLogin() {
+  app.innerHTML = `
+    <h2>登录</h2>
+    <label for="uid">用户号</label>
+    <input id="uid" placeholder="U12345678" autocapitalize="characters" autocomplete="username">
+    <label for="pw">密码</label>
+    <input id="pw" type="password" autocomplete="current-password">
+    <div class="row">
+      <button id="go">登录</button>
+      <a href="#/register"><button class="ghost">没有账号,去注册</button></a>
+    </div>
+    <div id="e"></div>
+    <p class="muted" style="margin-top:26px">账号只用来<b>以后找回自己的文章</b>。
+       它不会写进文章字节,也不参与任何证明 —— 你已发布的东西,
+       不需要这个网站、不需要账号,任何人都能独立验证。</p>`
+  $('#go').onclick = async () => {
+    $('#e').innerHTML = ''
+    try {
+      await api('/api/login', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ id: $('#uid').value, password: $('#pw').value }),
+      })
+      await refreshMe()
+      location.hash = '#/mine'
+    } catch (e) { $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>` }
+  }
+  $('#pw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#go').click() })
+}
+
+function viewRegister() {
+  app.innerHTML = `
+    <h2>注册</h2>
+    <p class="muted">用户号由系统随机分配,<b>不可更改</b>。注册后请立刻记下来 ——
+       它是你以后登录的唯一凭证,忘了就找不回来了(本站不收邮箱,也就无从帮你重置)。</p>
+    <label for="dn">显示名(可改,随便填)</label>
+    <input id="dn" placeholder="别人看到的名字">
+    <label for="pw1">密码(至少 8 位)</label>
+    <input id="pw1" type="password" autocomplete="new-password">
+    <label for="pw2">再输一遍</label>
+    <input id="pw2" type="password" autocomplete="new-password">
+    <div class="row"><button id="go">注册</button></div>
+    <div id="e"></div>`
+  $('#go').onclick = async () => {
+    $('#e').innerHTML = ''
+    if ($('#pw1').value !== $('#pw2').value) {
+      return $('#e').innerHTML = '<p class="err">两次密码不一样</p>'
+    }
+    try {
+      const u = await api('/api/register', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ password: $('#pw1').value, displayName: $('#dn').value }),
+      })
+      await refreshMe()
+      app.innerHTML = `
+        <h2>注册好了</h2>
+        <div class="proof ready" style="border-color:var(--seal)">
+          <div class="proof-h">你的用户号</div>
+          <dl><dd style="font-size:26px;letter-spacing:.12em;padding:8px 0">${u.id}</dd></dl>
+        </div>
+        <div class="warnbox"><b>现在就记下来。</b>本站不收邮箱、不收手机号,
+          所以<b>没有任何找回途径</b>。这个号丢了,账号就永久进不去了
+          —— 但你已发布的文章和证明不受影响,它们本来就不依赖账号。</div>
+        <div class="row">
+          <a href="#/write"><button>去写一篇</button></a>
+          <a href="#/mine"><button class="ghost">我的文章</button></a>
+        </div>`
+    } catch (e) { $('#e').innerHTML = `<p class="err">${esc(e.message)}</p>` }
+  }
+}
+
+async function viewMine() {
+  if (!me) { location.hash = '#/login'; return }
+  app.innerHTML = '<p class="muted">读取中…</p>'
+  const list = await api('/api/mine')
+  app.innerHTML = `
+    <h2>我的文章</h2>
+    <p class="muted">用户号 <b>${me.id}</b> · 显示名 ${esc(me.displayName)}</p>` +
+    (list.length ? list.map(m => `
+      <a class="item" href="#/a/${m.id}">
+        <h3>${esc(m.title)}</h3>
+        <div class="meta">${m.date.slice(0,10)} · ${
+          m.bitcoin?.confirmed ? '<span class="pill ok">比特币已确认</span>'
+                               : '<span class="pill wait">确认中</span>'}</div>
+      </a>`).join('')
+      : '<p class="muted">还没有。登录状态下发布的文章会出现在这里。</p>') +
+    `<div class="row"><a href="#/write"><button>写一篇</button></a></div>`
+}
+
+/* -------------------------------------------------------------- 路由 */
+function route() {
+  const h = location.hash || '#/'
+  for (const [id, hash] of [['#nav-home','#/'],['#nav-write','#/write'],['#nav-mine','#/mine']]) {
+    $(id).className = h === hash ? 'on' : ''
+  }
+  window.scrollTo(0, 0)
+  if (h === '#/write') return viewWrite()
+  if (h === '#/login') return viewLogin()
+  if (h === '#/register') return viewRegister()
+  if (h === '#/mine') return viewMine()
+  const m = h.match(/^#\/a\/([A-Za-z0-9]+)$/)
+  if (m) return viewArticle(m[1])
+  return viewHome()
+}
+addEventListener('hashchange', route)
+refreshMe().then(route)
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# 依赖,可重装
+node_modules/
+
+# 运行时日志
+*.log
+
+# 密钥绝不能进仓库(Arweave 钱包、管理员密钥都在 ~/.claude/secrets/)
+*.jwk
+*jwk*.json
+secrets/
+.env
+
+# 生成物:verify.html 由 lib/verifier.js 拼装而来,不是源头
+public/verify.html
+
+# 注意:data/ 刻意**不**忽略。
+# 那里面是全部文章、比特币证明和凭据 —— 正是这个仓库存在的理由:
+#   一、异地备份(硬盘坏了 .ots 就永久没了,重新 stamp 只会拿到更晚的时间戳)
+#   二、第三重时间戳(GitHub 服务器记录每次推送的时刻,和比特币/Arweave 无关的第三方)
+
+# 用户数据:密码哈希等,绝不能进公开仓库。
+# data/ 会被自动提交推送,所以账号另放 private/。
+private/
