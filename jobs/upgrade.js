@@ -32,7 +32,8 @@ async function upgradeOne(meta) {
       if (b) {
         meta.arweaveBlock = b
         changed = true
-        console.log(`  [${id}] Arweave 区块 #${b.height} @ ${b.time}`)
+        console.log(`  [${id}] Arweave 区块 #${b.height} @ ${b.time}` +
+                    (b.via === 'bundle' ? `(网关没索引这条,经 bundle ${b.bundleId} 核实)` : ''))
       } else {
         console.log(`  [${id}] Arweave 还没打包进区块`)
       }
