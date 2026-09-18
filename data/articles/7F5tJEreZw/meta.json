@@ -1,0 +1,37 @@
+{
+  "id": "7F5tJEreZw",
+  "format": "everlog/2",
+  "title": "小猪的鼻子有一点香味",
+  "author": "猪猪包",
+  "date": "2026-09-18T14:02:43Z",
+  "sha256": "6b656c7c115cadd519c3455c7d979a30c827375b120ef82d11ec53656d4cd159",
+  "byteLength": 317,
+  "owner": null,
+  "notBefore": {
+    "bitcoin": {
+      "height": 967562,
+      "hash": "000000000000000000020f1e5f032a911ff31dbd5f134d8c85e16fff26681058",
+      "time": "2026-09-18T13:49:29Z",
+      "mtpTime": "2026-09-18T13:25:16Z"
+    },
+    "arweave": {
+      "height": 2003516,
+      "hash": "9VJplHijTFvOIbre3aqdq6JiZ67JBudO-wo45YWmngZnW_MSnveLbFhnZjjSZOxL",
+      "time": "2026-09-18T14:00:39Z"
+    }
+  },
+  "status": "published",
+  "arweave": {
+    "txid": "OnmGHfVRDimPCOAAHB5C8h7QnolmuKa8UYPtCSnY7k4",
+    "url": "https://arweave.net/OnmGHfVRDimPCOAAHB5C8h7QnolmuKa8UYPtCSnY7k4",
+    "uploadedAt": "2026-09-18T14:02:54.091Z"
+  },
+  "bitcoin": {
+    "confirmed": false,
+    "proofs": [
+      "article.txt.ots",
+      "receipt.txt.ots"
+    ]
+  },
+  "publishedAt": "2026-09-18T14:02:56.376Z"
+}

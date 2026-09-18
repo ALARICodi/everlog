@@ -1,0 +1,5 @@
+everlog-receipt/1
+article: 7F5tJEreZw
+sha256: 6b656c7c115cadd519c3455c7d979a30c827375b120ef82d11ec53656d4cd159
+arweave: OnmGHfVRDimPCOAAHB5C8h7QnolmuKa8UYPtCSnY7k4
+issued: 2026-09-18T14:02:54Z
