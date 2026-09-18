@@ -30,5 +30,13 @@
     "txid": "xTSMBDgtBXSFLPVc03mMYbhb1Fa9HWw8IXAS98KYaEk",
     "url": "https://arweave.net/xTSMBDgtBXSFLPVc03mMYbhb1Fa9HWw8IXAS98KYaEk",
     "uploadedAt": "2026-08-21T11:59:58.039Z"
+  },
+  "arweaveBlock": {
+    "height": 1984414,
+    "id": "Jq9t1C9ojVEFL2IaRTTrbxLi1yH69768O02RdzBhNLOpWyWRZvQNGsxy3I1FvnBu",
+    "timestamp": 1787298628,
+    "time": "2026-08-21T07:50:28.000Z",
+    "bundleId": "7gGcFoJ84TymmSaKokwC06g8hxjtuG1VN9x0Sd3mVcE",
+    "via": "bundle"
   }
 }
